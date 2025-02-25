@@ -8,6 +8,11 @@ static const char *TAG = "Motor";
 
 #define MAX_PWM 500
 
+int rpm_to_pulse(float rpm)
+{
+    return rpm * 5.115; // 1023/200 = 5.115
+}
+
 void setup_pwm()
 {
     // Configure LEDC timer

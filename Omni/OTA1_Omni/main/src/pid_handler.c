@@ -8,8 +8,8 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
-#define TIME_STEP 0.01   // 10ms
-#define TIME_INTERVAL 10 // 10ms
+#define TIME_STEP 0.04   // 10ms
+#define TIME_INTERVAL 40 // 10ms
 
 extern PID_t pid_motor[NUM_MOTORS];
 
@@ -39,10 +39,10 @@ float pid_compute(PID_t *pid, float feedback)
     float derivative = (error - pid->prev_error) / TIME_STEP;
     float output = pid->Kp * error + pid->Ki * pid->integral + pid->Kd * derivative;
     pid->prev_error = error;
-    return output;
+    return output + feedback;
 }
 
-void update_rpm(float encoder_rpm[], float *pid_rpm)
+void update_rpm(float *encoder_rpm, float *pid_rpm)
 {
     for (int i = 0; i < NUM_MOTORS; i++)
     {
@@ -58,6 +58,9 @@ void pid_task(void *pvParameters)
 
     float pid_rpm[NUM_MOTORS] = {0};
 
+    int pulse[NUM_MOTORS];
+    int direction[NUM_MOTORS];
+
     while (1)
     {
         read_rpm(TIME_INTERVAL);
@@ -65,15 +68,32 @@ void pid_task(void *pvParameters)
 
         if (xTaskGetTickCount() - last_print_time >= pdMS_TO_TICKS(1000))
         {
-            // ESP_LOGI("PID", "PID RPM: %d %d %d\n", pid_rpm[0], pid_rpm[1], pid_rpm[2]);
-            ESP_LOGW("PID", "PID Pulse: %d %d %d\n", abs((int)(pid_rpm[0] * 5.11)), abs((int)(pid_rpm[1] * 5.11)), abs((int)(pid_rpm[2] * 5.11)));
+            ESP_LOGW("PID", "ENC: %.2f %.2f %.2f || PID RPM: %.2f %.2f %.2f ", encoder_rpm[0], encoder_rpm[1], encoder_rpm[2], pid_rpm[0], pid_rpm[1], pid_rpm[2]);
+
+            // ESP_LOGW("PID", "PID Pulse: %d %d %d", abs((int)(pid_rpm[0] * 5.11)), abs((int)(pid_rpm[1] * 5.11)), abs((int)(pid_rpm[2] * 5.11)));
             last_print_time = xTaskGetTickCount();
         }
         for (int i = 0; i < NUM_MOTORS; i++)
         {
 
-            set_motor_speed(i + 1, pid_rpm[i] > 0 ? 1 : 0, abs((int)(pid_rpm[i] * 5.11)));
+            pulse[i] = rpm_to_pulse(pid_rpm[i]);
+
+            // Xác định hướng động cơ
+            if (pulse[i] < 0)
+            {
+                direction[i] = 0; // Quay ngược
+                pulse[i] = -pulse[i];
+            }
+            else
+            {
+                direction[i] = 1; // Quay xuôi
+            }
         }
+
+        // Sau khi tính toán xong, gửi lệnh đồng thời
+        set_motor_speed(1, direction[0], pulse[0]);
+        set_motor_speed(2, direction[1], pulse[1]);
+        set_motor_speed(3, direction[2], pulse[2]);
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TIME_INTERVAL));
     }
 }

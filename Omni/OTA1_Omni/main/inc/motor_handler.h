@@ -16,6 +16,8 @@
 
 void setup_pwm();
 
+int rpm_to_pulse(float rpm);
+
 void set_motor_speed(int motor_id, int direction, int duty);
 
 #endif // MOTOR_HANDLER_H

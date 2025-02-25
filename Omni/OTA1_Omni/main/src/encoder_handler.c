@@ -1,5 +1,6 @@
 #include "encoder_handler.h"
 #include "gpio_handler.h"
+#include "kalman_filter.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,13 +13,20 @@
 
 #define LIMIT 32767
 #define FILTER 10000 // 10us vi 1 xung CPR co do dai bang 150 800 ns
+
+#if NON_PID == 1
 #define TIME_INTERVAL 50
+#else
+#define TIME_INTERVAL 50
+#endif
 
 static const char *TAG = "Encoder";
 
 volatile float encoder_rpm[NUM_MOTORS] = {0};
 
 pcnt_unit_handle_t encoder_unit[NUM_MOTORS] = {NULL};
+
+KalmanFilter encoder_kalman[NUM_MOTORS];
 
 void setup_pcnt_encoder(int unit_index, gpio_num_t pinA, gpio_num_t pinB)
 {
@@ -56,9 +64,14 @@ void setup_pcnt_encoder(int unit_index, gpio_num_t pinA, gpio_num_t pinB)
 
 void setup_encoders()
 {
+    ESP_LOGI(TAG, "Setting up encoders");
     setup_pcnt_encoder(0, ENCODER_1_A, ENCODER_1_B);
     setup_pcnt_encoder(1, ENCODER_2_A, ENCODER_2_B);
     setup_pcnt_encoder(2, ENCODER_3_A, ENCODER_3_B);
+    ESP_LOGI(TAG, "Setting up Kalman Filter");
+    Kalman_Init(&encoder_kalman[0], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
+    Kalman_Init(&encoder_kalman[1], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
+    Kalman_Init(&encoder_kalman[2], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
 }
 
 void read_rpm(int time)
@@ -67,8 +80,9 @@ void read_rpm(int time)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         pcnt_unit_get_count(encoder_unit[i], &count);
-        encoder_rpm[i] = 1.0 * (count * 60 * 1000) / (PULSE_PER_ROUND * time); // 1000 because TIME_INTERVAL is in ms
         pcnt_unit_clear_count(encoder_unit[i]);
+        count = Kalman_Update(&encoder_kalman[i], count);
+        encoder_rpm[i] = 1.0 * (count * 60 * 1000) / (PULSE_PER_ROUND * time); // 1000 because TIME_INTERVAL is ms
     }
 }
 
@@ -77,7 +91,7 @@ void read_encoders(int *encoder_count)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         pcnt_unit_get_count(encoder_unit[i], &encoder_count[i]);
-        pcnt_unit_clear_count(encoder_unit[i]);
+        // pcnt_unit_clear_count(encoder_unit[i]);
     }
 }
 
@@ -88,13 +102,17 @@ void task_send_encoder(void *pvParameters)
 
     char message[64];
     TickType_t last_wake_time = xTaskGetTickCount();
+
+    int encoder_count[3] = {0};
     while (1)
     {
 
 #if NON_PID == 1
         read_rpm(TIME_INTERVAL);
+        // read_encoders(encoder_count);
 #endif
         snprintf(message, sizeof(message), "1:%.2f;2:%.2f;3:%.2f\n", encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
+        // snprintf(message, sizeof(message), "1:%d;2:%d;3:%d\n", encoder_count[0], encoder_count[1], encoder_count[2]);
         if (send(sock, message, strlen(message), 0) < 0)
         {
             ESP_LOGE(TAG, "Failed to send encoder data");

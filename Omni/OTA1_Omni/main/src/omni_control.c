@@ -3,11 +3,15 @@
 #include "esp_log.h"
 #include "omni_control.h"
 #include "motor_handler.h"
+#include "sys_config.h"
+#include "pid_handler.h"
 
 #define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
 #define ROBOT_RADIUS 0.1528 // Khoảng cách từ tâm robot đến bánh xe (m)
 #define WEIGHT 2.0          // Trọng lượng robot (kg)
 #define PI 3.14159265359
+
+extern PID_t pid_motor[NUM_MOTORS];
 
 // Quy đổi từ rad/s sang RPM
 int m_s_to_rpm(float m_s)
@@ -18,10 +22,6 @@ int m_s_to_rpm(float m_s)
 float rad_s_to_rpm(float rad_s)
 {
     return (rad_s * 60) / (2 * PI);
-}
-int rpm_to_pulse(float rpm)
-{
-    return rpm * 5.115; // 1023/200 = 5.115
 }
 
 void calculate_wheel_speeds(const RobotParams *params, float *omega1, float *omega2, float *omega3)
@@ -42,10 +42,11 @@ void calculate_wheel_speeds(const RobotParams *params, float *omega1, float *ome
 // Task chính để điều khiển robot
 void omni_control(float dot_x, float dot_y, float dot_theta)
 {
-    float rpm1, rpm2, rpm3;
-    int pulse1, pulse2, pulse3;
+    float rpm[NUM_MOTORS];
+    int pulse[NUM_MOTORS];
+    int direction[NUM_MOTORS];
 
-    float omega1, omega2, omega3;
+    float omega[NUM_MOTORS];
     RobotParams robot = {
         .dot_x = dot_x,
         .dot_y = dot_y,
@@ -53,46 +54,38 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
         .theta = 0,
         .wheel_radius = WHEEL_RADIUS,
         .robot_radius = ROBOT_RADIUS};
-    // Tính vận tốc bánh xe theo RPM
-    calculate_wheel_speeds(&robot, &omega1, &omega2, &omega3);
 
-    rpm1 = rad_s_to_rpm(omega1);
-    rpm2 = rad_s_to_rpm(omega2);
-    rpm3 = rad_s_to_rpm(omega3);
+    // 🔹 Tính toán vận tốc góc cho từng bánh xe
+    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
 
-    pulse1 = rpm_to_pulse(rpm1);
-    pulse2 = rpm_to_pulse(rpm2);
-    pulse3 = rpm_to_pulse(rpm3);
+#if NON_PID == 1
+    // 🔹 Chuyển đổi sang RPM và Pulse
+    for (int i = 0; i < NUM_MOTORS; i++)
+    {
+        rpm[i] = rad_s_to_rpm(omega[i]);
+        pulse[i] = rpm_to_pulse(rpm[i]);
 
-    // Điều khiển động cơ theo tốc độ RPM
-    // printf("RPM1: %.2f, RPM2: %.2f, RPM3: %.2f \n", rpm1, rpm2, rpm3);
-    // printf("Pulse1: %d, Pulse2: %d, Pulse3: %d \n", pulse1, pulse2, pulse3);
-    // Must be update same time
-    if (pulse1 < 0)
-    {
-        pulse1 = -pulse1;
-        set_motor_speed(1, 0, pulse1);
+        // Xác định hướng động cơ
+        if (pulse[i] < 0)
+        {
+            direction[i] = 0; // Quay ngược
+            pulse[i] = -pulse[i];
+        }
+        else
+        {
+            direction[i] = 1; // Quay xuôi
+        }
     }
-    else
+
+    // Sau khi tính toán xong, gửi lệnh đồng thời
+    set_motor_speed(1, direction[0], pulse[0]);
+    set_motor_speed(2, direction[1], pulse[1]);
+    set_motor_speed(3, direction[2], pulse[2]);
+#else
+    for (int i = 0; i < NUM_MOTORS; i++)
     {
-        set_motor_speed(1, 1, pulse1);
+        rpm[i] = rad_s_to_rpm(omega[i]);
+        pid_set_setpoint(&pid_motor[i], rpm[i]);
     }
-    if (pulse2 < 0)
-    {
-        pulse2 = -pulse2;
-        set_motor_speed(2, 0, pulse2);
-    }
-    else
-    {
-        set_motor_speed(2, 1, pulse2);
-    }
-    if (pulse3 < 0)
-    {
-        pulse3 = -pulse3;
-        set_motor_speed(3, 0, pulse3);
-    }
-    else
-    {
-        set_motor_speed(3, 1, pulse3);
-    }
+#endif
 }
