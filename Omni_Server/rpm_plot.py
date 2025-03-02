@@ -3,7 +3,7 @@ from matplotlib.animation import FuncAnimation
 import time
 import numpy as np
 
-TIME_INTERVAL = 200
+TIME_INTERVAL = 50
 
 class RPMPlotter:
     def __init__(self):

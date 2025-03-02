@@ -123,12 +123,15 @@ class Server:
                         self.gui.update_encoders(self.encoders)
                         update_rpm_plot(self.encoders)  # Cập nhật biểu đồ
 
+                        with open("encoder_data.txt", "a") as file:
+                            file.write(" ".join([str(e) for e in self.encoders]) + "\n")
+
                     elif line.startswith("LOG:"):
                         log_message = line[4:]  
                         print(log_message)
 
                     else:
-                        self.gui.update_monitor(f"Unknown data format: {line}")
+                        print(f"Unknown data format: {line}")
                         
         except Exception as e:
             self.gui.update_monitor(f"Encoder reception error: {e}")
