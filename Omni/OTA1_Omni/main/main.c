@@ -22,14 +22,16 @@
 #include "omni_control.h"
 #include "pid_handler.h"
 #include "sys_config.h"
+#include "LPF.h"
 
-#define SERVER_IP "192.168.1.241" // Replace with server's IP address
 #define SERVER_PORT 12346
 
 static const char *TAG_Socket = "Socket";
 static const char *TAG_PID = "PID";
 
 PID_t pid_motor[3];
+
+extern LPF encoder_lpf[NUM_MOTORS];
 
 int setup_socket()
 {
@@ -103,9 +105,11 @@ void task_socket(void *pvParameters)
             {
 #if NON_PID == 1
                 set_motor_speed(motor_id, motor_speed > 0 ? 1 : 0, abs((int)(motor_speed * 5.11)));
+                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed);
                 ESP_LOGW(TAG_PID, "Updated Motor %d speed to %d with direction %d", motor_id, abs((int)(motor_speed * 5.11)), motor_speed > 0 ? 1 : 0);
 #else
                 // Tính toán tốc độ RPM từ tốc độ PWM
+                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 pid_set_setpoint(&pid_motor[motor_id - 1], motor_speed);
                 printf("Updated Motor %d speed to %d\n", motor_id, motor_speed);
 #endif
@@ -133,7 +137,9 @@ void app_main()
 {
     connect_to_wifi();
     int socket = setup_socket();
+#if LOG_SERVER == 1
     log_init(socket);
+#endif
     ESP_LOGI(TAG_Socket, "Starting application");
     setup_encoders();
     setup_pwm();

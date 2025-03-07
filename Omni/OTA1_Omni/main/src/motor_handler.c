@@ -6,7 +6,7 @@
 
 static const char *TAG = "Motor";
 
-#define MAX_PWM 500
+#define MAX_PWM 700
 
 int rpm_to_pulse(float rpm)
 {

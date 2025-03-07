@@ -156,10 +156,10 @@ class Server:
         self.gui.update_monitor(f"Motor {motor_index + 1} speed updated to {speed}")
 
     def send_set_pid(self):
+        rpm_plotter.show_plot()
         if self.client_socket:
             try:
                 self.client_socket.sendall(b"Set PID")
-                rpm_plotter.show_plot()
                 self.gui.update_monitor("Sent 'Set PID' command to the client.")
             except Exception as e:
                 self.gui.update_monitor(f"Failed to send 'Set PID' command: {e}")

@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <math.h>
+
 #include "esp_log.h"
+
 #include "omni_control.h"
 #include "motor_handler.h"
 #include "sys_config.h"
 #include "pid_handler.h"
+#include "LPF.h"
 
 #define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
 #define ROBOT_RADIUS 0.1528 // Khoảng cách từ tâm robot đến bánh xe (m)
@@ -13,6 +16,7 @@
 
 extern PID_t pid_motor[NUM_MOTORS];
 
+extern LPF encoder_lpf[NUM_MOTORS];
 // Quy đổi từ rad/s sang RPM
 int m_s_to_rpm(float m_s)
 {
@@ -37,7 +41,7 @@ void calculate_wheel_speeds(const RobotParams *params, float *omega1, float *ome
     *omega2 = (H_inv[1][0] * params->dot_x + H_inv[1][1] * params->dot_y + H_inv[1][2] * params->dot_theta) / params->wheel_radius;
     *omega3 = (H_inv[2][0] * params->dot_x + H_inv[2][1] * params->dot_y + H_inv[2][2] * params->dot_theta) / params->wheel_radius;
 
-    printf("Omega1: %f, Omega2: %f, Omega3: %f\n", *omega1, *omega2, *omega3);
+    // printf("Omega1: %f, Omega2: %f, Omega3: %f\n", *omega1, *omega2, *omega3);
 }
 // Task chính để điều khiển robot
 void omni_control(float dot_x, float dot_y, float dot_theta)
@@ -63,6 +67,8 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
+
+        LPF_Clear(&encoder_lpf[i], rpm[i]);
         pulse[i] = rpm_to_pulse(rpm[i]);
 
         // Xác định hướng động cơ
@@ -85,6 +91,7 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
+        LPF_Clear(&encoder_lpf[i], rpm[i]);
         pid_set_setpoint(&pid_motor[i], rpm[i]);
     }
 #endif

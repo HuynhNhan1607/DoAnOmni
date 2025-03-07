@@ -1,6 +1,7 @@
 #include "encoder_handler.h"
 #include "gpio_handler.h"
 #include "kalman_filter.h"
+#include "LPF.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,9 +16,9 @@
 #define FILTER 10000 // 10us vi 1 xung CPR co do dai bang 150 800 ns
 
 #if NON_PID == 1
-#define TIME_INTERVAL 50
+#define TIME_INTERVAL 20
 #else
-#define TIME_INTERVAL 50
+#define TIME_INTERVAL 20
 #endif
 
 static const char *TAG = "Encoder";
@@ -27,6 +28,11 @@ volatile float encoder_rpm[NUM_MOTORS] = {0};
 pcnt_unit_handle_t encoder_unit[NUM_MOTORS] = {NULL};
 
 KalmanFilter encoder_kalman[NUM_MOTORS];
+
+LPF encoder_lpf[NUM_MOTORS];
+
+float a_coeffs_enc[FILTER_ORDER] = {0.904204};
+float b_coeffs_enc[FILTER_ORDER + 1] = {0.04789, 0.04789};
 
 void setup_pcnt_encoder(int unit_index, gpio_num_t pinA, gpio_num_t pinB)
 {
@@ -69,20 +75,31 @@ void setup_encoders()
     setup_pcnt_encoder(1, ENCODER_2_A, ENCODER_2_B);
     setup_pcnt_encoder(2, ENCODER_3_A, ENCODER_3_B);
     ESP_LOGI(TAG, "Setting up Kalman Filter");
-    Kalman_Init(&encoder_kalman[0], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
-    Kalman_Init(&encoder_kalman[1], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
-    Kalman_Init(&encoder_kalman[2], 0.1, 2.0, 0.0); // (Q, R, Giá trị ban đầu)
+    Kalman_Init(&encoder_kalman[0], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    Kalman_Init(&encoder_kalman[1], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    Kalman_Init(&encoder_kalman[2], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    ESP_LOGI(TAG, "Setting up Low Pass Filter");
+    LPF_Init(&encoder_lpf[0], a_coeffs_enc, b_coeffs_enc, TIME_INTERVAL);
+    LPF_Init(&encoder_lpf[1], a_coeffs_enc, b_coeffs_enc, TIME_INTERVAL);
+    LPF_Init(&encoder_lpf[2], a_coeffs_enc, b_coeffs_enc, TIME_INTERVAL);
 }
 
 void read_rpm(int time)
 {
     int count;
+    float float_count;
+    float prev_count[3] = {0};
+    float alpha = 0.7;
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         pcnt_unit_get_count(encoder_unit[i], &count);
         pcnt_unit_clear_count(encoder_unit[i]);
-        count = Kalman_Update(&encoder_kalman[i], count);
+        // float_count = Kalman_Update(&encoder_kalman[i], count);
+        // float_count = LPF_Apply(&encoder_lpf[i], (float)count);
+        float_count = alpha * count + (1 - alpha) * prev_count[i];
+        prev_count[i] = float_count;
         encoder_rpm[i] = 1.0 * (count * 60 * 1000) / (PULSE_PER_ROUND * time); // 1000 because TIME_INTERVAL is ms
+        encoder_rpm[i] = LPF_Apply(&encoder_lpf[i], encoder_rpm[i]);
     }
 }
 
