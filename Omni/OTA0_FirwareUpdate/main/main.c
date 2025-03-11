@@ -13,9 +13,14 @@
 #include "driver/gpio.h"
 #include "log_handler.h"
 
-#define WIFI_SSID "A10.14"
-#define WIFI_PASS "MMNT2004"
-#define SERVER_IP "192.168.1.241"
+// #define WIFI_SSID "A10.14"
+// #define WIFI_PASS "MMNT2004"
+// #define SERVER_IP "192.168.1.241"
+
+#define WIFI_SSID "CEEC_Tenda"
+#define WIFI_PASS "1denmuoi1"
+#define SERVER_IP "192.168.2.126"
+
 #define SERVER_PORT 12345
 
 static const char *TAG = "Custom_OTA";

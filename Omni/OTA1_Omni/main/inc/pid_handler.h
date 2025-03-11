@@ -15,6 +15,8 @@ typedef struct PID_t
     float prev_error;
     float integral;
     float last_time;
+    float last_derivative;
+    float beta_coeff;
 } PID_t;
 
 void pid_init(PID_t *pid, float Kp, float Ki, float Kd);
