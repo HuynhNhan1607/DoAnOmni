@@ -4,7 +4,7 @@ from scipy.fftpack import fft, fftfreq
 
 # BƯỚC 1: Đọc dữ liệu từ file .txt
 # file_path = "Filter_Data.txt"  # Cập nhật tên file nếu cần
-file_path = "encoder_data.txt"  # Cập nhật tên file nếu cần
+file_path = "Filter_Data.txt"  # Cập nhật tên file nếu cần
 data = np.loadtxt(file_path)
 
 # BƯỚC 2: Tách dữ liệu động cơ

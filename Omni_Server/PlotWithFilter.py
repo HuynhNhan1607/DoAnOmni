@@ -1,30 +1,3 @@
-# import numpy as np
-# import matplotlib.pyplot as plt
-# from scipy.fftpack import fft, fftfreq
-
-# # 🚀 1️⃣ Đọc dữ liệu (giả lập dữ liệu thực tế)
-# data = np.loadtxt("Storage.txt")  # Thay bằng file thực tế
-# sampling_freq = 50  # Hz (Mỗi 50ms lấy mẫu một lần)
-
-# # 🚀 2️⃣ Loại bỏ thành phần DC (trừ giá trị trung bình)
-# data_no_dc = data - np.mean(data, axis=0)  # Trừ giá trị trung bình của từng động cơ
-
-# # 🚀 3️⃣ Tính FFT sau khi loại bỏ DC
-# num_samples, num_motors = data.shape
-# frequencies = fftfreq(num_samples, d=1/sampling_freq)[:num_samples//2]
-
-# plt.figure(figsize=(12, 5))
-# for i in range(num_motors):
-#     y_fft = np.abs(fft(data_no_dc[:, i]))[:num_samples//2]  # FFT sau khi trừ DC
-#     plt.plot(frequencies, y_fft, label=f'FFT Động cơ {i+1}')
-    
-# plt.xlabel("Tần số (Hz)")
-# plt.ylabel("Biên độ")
-# plt.title("Phân tích tần số sau khi loại bỏ thành phần DC")
-# plt.xlim([0, 2])  # Chỉ tập trung vào tần số thấp
-# plt.legend()
-# plt.grid()
-# plt.show()
 import numpy as np
 import matplotlib.pyplot as plt
 
