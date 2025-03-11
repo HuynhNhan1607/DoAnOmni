@@ -13,13 +13,13 @@
 #include "driver/gpio.h"
 #include "log_handler.h"
 
-// #define WIFI_SSID "A10.14"
-// #define WIFI_PASS "MMNT2004"
-// #define SERVER_IP "192.168.1.241"
+#define WIFI_SSID "A10.14"
+#define WIFI_PASS "MMNT2004"
+#define SERVER_IP "192.168.1.241"
 
-#define WIFI_SSID "CEEC_Tenda"
-#define WIFI_PASS "1denmuoi1"
-#define SERVER_IP "192.168.2.126"
+// #define WIFI_SSID "S20 FE"
+// #define WIFI_PASS "25102004"
+// #define SERVER_IP "192.168.189.85"
 
 #define SERVER_PORT 12345
 
@@ -199,6 +199,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Custom ESP32 OTA Update");
     connect_to_wifi();
     socket = init_socket();
-    log_init(socket);
+    // log_init(socket);
     xTaskCreate(&ota_update_task, "ota_update_task", 8192, (void *)&socket, 5, NULL);
 }

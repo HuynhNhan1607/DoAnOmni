@@ -9,5 +9,6 @@
     "idf.portWin": "COM4",
     "files.associations": {
         "esp_log.h": "c"
-    }
+    },
+    "idf.pythonInstallPath": "D:\\APP\\Espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }

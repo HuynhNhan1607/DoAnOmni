@@ -25,4 +25,5 @@ void log_init(int socket)
 {
     client_socket = socket;          // Lưu socket client
     esp_log_set_vprintf(log_to_tcp); // Redirect log sang TCP
+    esp_log_level_set("*", ESP_LOG_WARN);
 }
