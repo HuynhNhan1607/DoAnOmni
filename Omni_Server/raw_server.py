@@ -1,3 +1,5 @@
+import os
+import json
 import socket
 import threading
 import re
@@ -26,7 +28,41 @@ class Server:
         self.client_connected = False
         self.connection_status = "Disconnected"
         self.log_data = True  # Enable data logging by default
+                # Khởi tạo dictionary để quản lý file log
+        self.log_files = {}
+        self.start_times = {}
+        self.supported_types = ["encoder", "bno055", "log"]
+    
+        # Tạo file log mới cho loại dữ liệu
+    def setup_log_file(self, data_type):
+        if not self.log_data or data_type in self.log_files:
+            return
+            
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_filename = f"{log_dir}/{data_type}_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
         
+        self.log_files[data_type] = open(log_filename, "w")
+        
+        # Tạo header dựa vào loại dữ liệu
+        if data_type == "encoder":
+            self.log_files[data_type].write("Time RPM1 RPM2 RPM3\n")
+        elif data_type == "bno055":
+            self.log_files[data_type].write("Time Roll Pitch Yaw AccX AccY AccZ\n")
+        elif data_type == "log":
+            self.log_files[data_type].write("Time Message\n")
+            
+        self.start_times[data_type] = time.time()
+        self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
+    
+    # Đóng tất cả file log
+    def close_all_logs(self):
+        for log_type, log_file in self.log_files.items():
+            log_file.close()
+            self.gui.update_monitor(f"{log_type.capitalize()} data log closed")
+        self.log_files = {}
+        self.start_times = {}
+
     def start_firmware_server(self):
         if self.firmware_active:
             self.gui.update_monitor("Firmware server already running.")
@@ -118,11 +154,20 @@ class Server:
 
                 data = sock.recv(1024).decode()
                 if not data:
+                    self.gui.update_monitor("Firmware client disconnected")
                     break
                 self.gui.update_monitor(f"Upgrade status: {data}")
         except Exception as e:
             self.gui.update_monitor(f"Error receiving upgrade status: {e}")
         finally:
+            # Đóng socket khi client ngắt kết nối
+            try:
+                if sock:
+                    sock.close()
+            except:
+                pass
+            if self.client_socket == sock:
+                self.client_socket = None
             self.client_connected = False
             self.connection_status = "Disconnected"
             self.gui.update_status("Disconnected")
@@ -172,37 +217,99 @@ class Server:
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind(("0.0.0.0", 12346))
             self.server_socket.listen(1)
-            self.gui.update_monitor("Control server started, waiting for client...")
-            self.gui.update_status("Control server listening")
+            self.control_active = True
+            self.gui.update_status("Waiting for connection...")
             
-            self.client_socket, addr = self.server_socket.accept()
-            self.client_connected = True
-            self.connection_status = f"Connected to {addr[0]}:{addr[1]}"
-            self.gui.update_monitor(f"Client connected for control: {addr}")
-            self.gui.update_status(self.connection_status)
-            self.gui.enable_control_buttons()
-
-            threading.Thread(target=self.receive_encoder_data, args=(self.client_socket,), daemon=True).start()
+            while self.control_active:
+                try:
+                    self.client_socket, addr = self.server_socket.accept()
+                    self.client_socket.settimeout(0.5)
+                    self.client_connected = True
+                    self.gui.update_status(f"Connected to {addr[0]}")
+                    self.gui.enable_control_buttons()
+                    
+                    # Gọi hàm mới thay vì hàm cũ
+                    self.receive_client_data(self.client_socket)
+                    
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    self.gui.update_monitor(f"Server error: {e}")
+                    break
+                    
         except Exception as e:
+            self.gui.update_monitor(f"Server init error: {e}")
+        finally:
+            if self.server_socket:
+                self.server_socket.close()
             self.control_active = False
-            self.gui.update_monitor(f"Error starting control server: {e}")
-            self.gui.update_status("Server error")
+            self.gui.update_status("Server stopped")
+            self.gui.disable_buttons()
 
-    def receive_encoder_data(self, sock):
+        # Hàm xử lý dữ liệu encoder
+    def process_encoder_data(self, encoder_data):
+        if not isinstance(encoder_data, list) or len(encoder_data) < 3:
+            self.gui.update_monitor(f"Invalid encoder data format: {encoder_data}")
+            return
+            
+        # Cập nhật giá trị encoder
+        self.encoders[0] = float(encoder_data[0])
+        self.encoders[1] = float(encoder_data[1])
+        self.encoders[2] = float(encoder_data[2])
+        
+        # Cập nhật UI
+        self.gui.update_encoders(self.encoders)
+        update_rpm_plot(self.encoders)
+        
+        # Ghi log nếu được bật
+        self.setup_log_file("encoder")
+        if self.log_data and "encoder" in self.log_files:
+            timestamp = time.time() - self.start_times["encoder"]
+            self.log_files["encoder"].write(f"{timestamp:.3f} {' '.join([str(e) for e in self.encoders])}\n")
+            self.log_files["encoder"].flush()
+
+    # Hàm xử lý dữ liệu BNO055
+    def process_bno055_data(self, bno_data):
+        if not isinstance(bno_data, list) or len(bno_data) < 6:
+            self.gui.update_monitor(f"Invalid BNO055 data format: {bno_data}")
+            return
+            
+        # Xử lý dữ liệu BNO055
+        roll, pitch, yaw = bno_data[0], bno_data[1], bno_data[2]
+        acc_x, acc_y, acc_z = bno_data[3], bno_data[4], bno_data[5]
+        
+        # Cập nhật UI (thêm code UI xử lý BNO055 nếu cần)
+        self.gui.update_monitor(f"BNO055: Roll={roll:.2f} Pitch={pitch:.2f} Yaw={yaw:.2f}")
+        
+        # Ghi log nếu được bật
+        self.setup_log_file("bno055")
+        if self.log_data and "bno055" in self.log_files:
+            timestamp = time.time() - self.start_times["bno055"]
+            self.log_files["bno055"].write(f"{timestamp:.3f} {roll:.2f} {pitch:.2f} {yaw:.2f} {acc_x:.2f} {acc_y:.2f} {acc_z:.2f}\n")
+            self.log_files["bno055"].flush()
+
+    # Hàm xử lý thông điệp log từ thiết bị
+    def process_log_message(self, log_message):
+        # Hiển thị log lên UI
+        self.gui.update_monitor(f"Device log: {log_message}")
+        
+        # Ghi log nếu được bật
+        self.setup_log_file("log")
+        if self.log_data and "log" in self.log_files:
+            timestamp = time.time() - self.start_times["log"]
+            self.log_files["log"].write(f"{timestamp:.3f} {log_message}\n")
+            self.log_files["log"].flush()
+
+
+    def receive_client_data(self, sock):
         buffer = ""  # Lưu dữ liệu bị phân mảnh
-        log_file = None
         
         try:
-            if self.log_data:
-                log_filename = f"logs/encoder_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-                log_file = open(log_filename, "w")
-                log_file.write("Time RPM1 RPM2 RPM3\n")
-                start_time = time.time()
-                
             while self.control_active:
                 try:
                     data = sock.recv(1024).decode()
                     if not data:
+                        self.gui.update_monitor("Control client disconnected")
                         break
 
                     buffer += data  # Thêm dữ liệu mới vào buffer
@@ -211,44 +318,55 @@ class Server:
                         line, buffer = buffer.split("\n", 1)  # Lấy một dòng hoàn chỉnh
                         line = line.strip()  # Loại bỏ ký tự trắng thừa
 
-                        if line.startswith("1:"):
-                            pattern = r"(\d):(-?\d+(?:\.\d+)?)"
-                            matches = re.findall(pattern, line)
-
-                            for motor_id, value in matches:
-                                motor_index = int(motor_id) - 1
-                                self.encoders[motor_index] = float(value)  # Ép kiểu float
-
-                            self.gui.update_encoders(self.encoders)
-                            update_rpm_plot(self.encoders)  # Cập nhật biểu đồ
-
-                            # Log data if enabled
-                            if self.log_data and log_file:
-                                timestamp = time.time() - start_time
-                                log_file.write(f"{timestamp:.3f} {' '.join([str(e) for e in self.encoders])}\n")
-                                log_file.flush()
-
-                        elif line.startswith("LOG:"):
-                            log_message = line[4:].strip()
-                            self.gui.update_monitor(f"Device log: {log_message}")
-
-                        else:
-                            print(f"Unknown data format: {line}")
+                        # Phân tích dữ liệu JSON
+                        try:
+                            json_data = json.loads(line)
+                            # Kiểm tra trường type
+                            if "type" in json_data:
+                                message_type = json_data["type"]
+                                if message_type != "encoder":
+                                    print(json_data["message"])
+                                    print(message_type)
+                                # Phân phối dữ liệu dựa vào loại
+                                if message_type == "encoder" and "data" in json_data:
+                                    self.process_encoder_data(json_data["data"])
+                                    
+                                elif message_type == "bno055" and "data" in json_data:
+                                    self.process_bno055_data(json_data["data"])
+                                    
+                                elif message_type == "log" and "message" in json_data:
+                                    self.process_log_message(json_data["message"])
+                                    
+                                else:
+                                    self.gui.update_monitor(f"Unknown message type or missing data: {json_data}")
+                            
+                            else:
+                                self.gui.update_monitor(f"Missing type field in JSON: {json_data}")
+                                
+                        except json.JSONDecodeError:
+                            # Dữ liệu không đúng định dạng JSON
+                            self.gui.update_monitor(f"Invalid JSON format: {line}")
+                                
                 except socket.timeout:
                     continue
                     
         except Exception as e:
-            self.gui.update_monitor(f"Encoder reception error: {e}")
+            self.gui.update_monitor(f"Data reception error: {e}")
             print(f"Buffer at error: {buffer}")
         finally:
+            # Đóng socket khi client ngắt kết nối
+            try:
+                if sock:
+                    sock.close()
+            except:
+                pass
+            if self.client_socket == sock:
+                self.client_socket = None
             self.client_connected = False
             self.connection_status = "Disconnected"
             self.gui.update_status("Disconnected")
             self.gui.disable_control_buttons()
-            
-            if log_file:
-                log_file.close()
-                self.gui.update_monitor(f"Encoder data logged to {log_filename}")
+            self.close_all_logs()
 
     def send_command(self, dot_x, dot_y, dot_theta):
         # Gửi lệnh điều khiển đến client
@@ -431,7 +549,8 @@ class ServerGUI:
         self.send_firmware_button.grid(row=0, column=2, padx=5, pady=5)
         
         self.switch_upgrade_button = ttk.Button(firmware_frame, text="Switch to Upgrade Mode", 
-                                         command=self.server.send_upgrade_command)
+                                         command=self.server.send_upgrade_command,
+                                         state="disabled")  # Bắt đầu với trạng thái disabled
         self.switch_upgrade_button.grid(row=0, column=3, padx=5, pady=5)
         
         # Progress bar (hidden initially)
@@ -628,6 +747,8 @@ class ServerGUI:
     def enable_control_buttons(self):
         """Enable control buttons when connected"""
         self.manual_control_button.config(state="normal")
+        # Bật nút Switch Upgrade Mode khi client kết nối vào control server
+        self.switch_upgrade_button.config(state="normal")
 
     def disable_buttons(self):
         """Disable all buttons when disconnected"""
@@ -638,8 +759,9 @@ class ServerGUI:
     def disable_control_buttons(self):
         """Disable control buttons when disconnected"""
         # The manual control button can remain enabled since it opens a separate window
-        pass
-
+        # Tắt nút Switch Upgrade Mode khi client ngắt kết nối
+        self.switch_upgrade_button.config(state="disabled")
+    
     def update_encoders(self, encoders):
         """Update the encoder labels with new values"""
         for i, value in enumerate(encoders):

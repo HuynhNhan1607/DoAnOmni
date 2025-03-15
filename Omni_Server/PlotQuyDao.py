@@ -24,7 +24,7 @@ def compute_velocity(theta, omega):
     ])
     omega_scaled = omega * wheel_radius
     velocities = np.linalg.solve(H, omega_scaled)
-    return velocities[0], velocities[1], 0
+    return velocities[0], velocities[1], velocities[3]
 
 # Tính toán vị trí
 for omega in omega_wheel:

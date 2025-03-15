@@ -144,7 +144,7 @@ void app_main()
     ESP_LOGI(TAG_Socket, "Starting application");
     setup_encoders();
     setup_pwm();
-    bno055_start();
+    // bno055_start();
     xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
 }
