@@ -88,9 +88,11 @@ typedef struct
     int16_t accel_offset_x;
     int16_t accel_offset_y;
     int16_t accel_offset_z;
+
     int16_t mag_offset_x;
     int16_t mag_offset_y;
     int16_t mag_offset_z;
+
     int16_t gyro_offset_x;
     int16_t gyro_offset_y;
     int16_t gyro_offset_z;
@@ -203,7 +205,7 @@ esp_err_t bno055_displ_sys_status(i2c_number_t i2c_num);
 // each field can have values from 0 to 3
 // 3 indicates fully calibrated; 0 indicates not calibrated
 // uint8_t* system - Current system calibration status, depends on status of all sensors
-bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_status);
+bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_status, uint8_t mode);
 esp_err_t bno055_set_offsets(i2c_number_t i2c_num, bno055_offsets_t *offsets);
 esp_err_t bno055_get_calib_status(i2c_number_t i2c_num, calib_status_t *calib_status);
 esp_err_t bno055_get_calib_status_byte(i2c_number_t i2c_num, uint8_t *calib);

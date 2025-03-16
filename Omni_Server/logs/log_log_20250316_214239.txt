@@ -1,0 +1,6 @@
+Time Message
+0.002 W (6607) Motor: Setup Motor Done
+1.477 W (8027) bno055: Set calibration offsets - Ok
+1.479 W (8027) bno055: Accel offset: -17 -15 -24    Magnet: 96 396 -112    Gyro: -1 -1 0 Acc_Radius: 1000    Mag_Radius: 1008
+2.132 W (8647) Socket: ----Switch to Upgrade----
+3.581 W (10097) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0

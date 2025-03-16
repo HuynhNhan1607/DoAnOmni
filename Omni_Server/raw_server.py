@@ -22,6 +22,8 @@ class Server:
         self.speed = [0, 0, 0]  # Speed for three motors
         self.encoders = [0, 0, 0]  # Encoder values for three motors
         self.pid_values = [[0.0, 0.0, 0.0] for _ in range(3)]  # PID values as floats
+        self.bno055_calibrated = False
+
         self.server_socket = None
         self.client_socket = None
         self.sending_firmware = False
@@ -48,7 +50,7 @@ class Server:
         if data_type == "encoder":
             self.log_files[data_type].write("Time RPM1 RPM2 RPM3\n")
         elif data_type == "bno055":
-            self.log_files[data_type].write("Time Roll Pitch Yaw AccX AccY AccZ\n")
+            self.log_files[data_type].write("Time Heading Pitch Roll AccelX AccelY AccelZ GravityX GravityY GravityZ\n")
         elif data_type == "log":
             self.log_files[data_type].write("Time Message\n")
             
@@ -270,24 +272,74 @@ class Server:
 
     # Hàm xử lý dữ liệu BNO055
     def process_bno055_data(self, bno_data):
-        if not isinstance(bno_data, list) or len(bno_data) < 6:
-            self.gui.update_monitor(f"Invalid BNO055 data format: {bno_data}")
-            return
-            
-        # Xử lý dữ liệu BNO055
-        roll, pitch, yaw = bno_data[0], bno_data[1], bno_data[2]
-        acc_x, acc_y, acc_z = bno_data[3], bno_data[4], bno_data[5]
+        """
+        Xử lý dữ liệu BNO055 theo định dạng mới
         
-        # Cập nhật UI (thêm code UI xử lý BNO055 nếu cần)
-        self.gui.update_monitor(f"BNO055: Roll={roll:.2f} Pitch={pitch:.2f} Yaw={yaw:.2f}")
-        
-        # Ghi log nếu được bật
-        self.setup_log_file("bno055")
-        if self.log_data and "bno055" in self.log_files:
-            timestamp = time.time() - self.start_times["bno055"]
-            self.log_files["bno055"].write(f"{timestamp:.3f} {roll:.2f} {pitch:.2f} {yaw:.2f} {acc_x:.2f} {acc_y:.2f} {acc_z:.2f}\n")
-            self.log_files["bno055"].flush()
+        Format dữ liệu:
+        {
+            "time": thời_gian,
+            "euler": [heading, pitch, roll],
+            "lin_accel": [x, y, z],
+            "gravity": [x, y, z]
+        }
+        """
+        try:
+            # Kiểm tra xem bno_data có phải dict không
+            if not isinstance(bno_data, dict):
+                self.gui.update_monitor(f"Invalid BNO055 data format, expected dictionary")
+                return
 
+                    # Kiểm tra sự kiện hiệu chuẩn hoàn thành
+            if "event" in bno_data and bno_data["event"] == "calibration_complete":
+                # Hiển thị thông báo hiệu chuẩn hoàn thành
+                status = bno_data.get("status", {})
+                self.gui.update_monitor(
+                    f"BNO055 CALIBRATION COMPLETE! Status: Sys={status.get('sys', 0)}, "
+                    f"Gyro={status.get('gyro', 0)}, Accel={status.get('accel', 0)}, "
+                    f"Mag={status.get('mag', 0)}"
+                )
+                self.gui.update_calibration_status(True)
+
+            # Lấy dữ liệu từ JSON
+            time_val = bno_data.get("time", 0)
+            euler = bno_data.get("euler", [0, 0, 0])
+            lin_accel = bno_data.get("lin_accel", [0, 0, 0])
+            gravity = bno_data.get("gravity", [0, 0, 0])
+
+            # Kiểm tra dữ liệu có đủ không
+            if len(euler) < 3 or len(lin_accel) < 3 or len(gravity) < 3:
+                self.gui.update_monitor(f"Incomplete BNO055 data")
+                return
+
+            # Giải nén dữ liệu euler
+            heading, pitch, roll = euler[0], euler[1], euler[2]
+            
+            # Giải nén dữ liệu gia tốc
+            accel_x, accel_y, accel_z = lin_accel[0], lin_accel[1], lin_accel[2]
+            
+            # Giải nén dữ liệu trọng lực
+            gravity_x, gravity_y, gravity_z = gravity[0], gravity[1], gravity[2]
+            
+            # # Hiển thị thông tin quan trọng lên UI
+            # self.gui.update_monitor(
+            #     f"BNO055: Heading={heading:.2f}° Pitch={pitch:.2f}° Roll={roll:.2f}° | "
+            #     f"Accel: [{accel_x:.2f}, {accel_y:.2f}, {accel_z:.2f}] m/s²"
+            # )
+            
+            # Ghi log nếu được bật
+            self.setup_log_file("bno055")
+            if self.log_data and "bno055" in self.log_files:
+                timestamp = time.time() - self.start_times["bno055"]
+                # Lưu đầy đủ dữ liệu
+                self.log_files["bno055"].write(
+                    f"{timestamp:.3f} {heading:.2f} {pitch:.2f} {roll:.2f} "
+                    f"{accel_x:.2f} {accel_y:.2f} {accel_z:.2f} "
+                    f"{gravity_x:.2f} {gravity_y:.2f} {gravity_z:.2f}\n"
+                )
+                self.log_files["bno055"].flush()
+                
+        except Exception as e:
+            self.gui.update_monitor(f"Error processing BNO055 data: {e}")
     # Hàm xử lý thông điệp log từ thiết bị
     def process_log_message(self, log_message):
         # Hiển thị log lên UI
@@ -324,9 +376,7 @@ class Server:
                             # Kiểm tra trường type
                             if "type" in json_data:
                                 message_type = json_data["type"]
-                                if message_type != "encoder":
-                                    print(json_data["message"])
-                                    print(message_type)
+
                                 # Phân phối dữ liệu dựa vào loại
                                 if message_type == "encoder" and "data" in json_data:
                                     self.process_encoder_data(json_data["data"])
@@ -579,17 +629,42 @@ class ServerGUI:
         emerg_button = ttk.Button(control_frame, text="EMERGENCY STOP", 
                                   command=self.server.emergency_stop, style="Red.TButton")
         emerg_button.grid(row=0, column=3, padx=5, pady=5)
-        
-        # Motor control frame
-        motor_frame = ttk.LabelFrame(control_tab, text="Motor Control", padding=10)
-        motor_frame.pack(fill="x", pady=5)
-        
-        # Labels for the columns
+
+        # Tạo khung chứa cho Motor Control và BNO055
+        control_container = ttk.Frame(control_tab)
+        control_container.pack(fill="x", pady=5)
+
+        # Motor control frame - đặt bên trái
+        motor_frame = ttk.LabelFrame(control_container, text="Motor Control", padding=10)
+        motor_frame.grid(row=0, column=0, padx=(0,5), pady=5, sticky="nsew")
+
+        # BNO055 frame - đặt bên phải
+        bno055_frame = ttk.LabelFrame(control_container, text="BNO055 Sensor", padding=10)
+        bno055_frame.grid(row=0, column=1, padx=(5,0), pady=5, sticky="nsew")
+
+        # Đặt trọng số cho cột để chúng mở rộng đồng đều
+        control_container.columnconfigure(0, weight=1)
+        control_container.columnconfigure(1, weight=1)
+
+        # Tạo chỉ báo trạng thái hiệu chuẩn trong khung BNO055
+        calib_frame = ttk.Frame(bno055_frame)
+        calib_frame.pack(fill="x", pady=5)
+
+        ttk.Label(calib_frame, text="Calibration Status:").pack(side="left", padx=5)
+        self.calib_indicator = tk.Label(calib_frame, text="Not Calibrated", 
+                                     bg="#F44336", fg="white", 
+                                     width=15, relief="flat")
+        self.calib_indicator.pack(side="left", padx=10)
+
+        # Thêm nội dung khác cho BNO055 frame (hiện tại để trống)
+        ttk.Label(bno055_frame, text="IMU data will be shown here").pack(pady=20)
+
+        # Các Labels cho motor_frame như cũ
         ttk.Label(motor_frame, text="Motor").grid(row=0, column=0, padx=5, pady=5)
         ttk.Label(motor_frame, text="Speed").grid(row=0, column=1, padx=5, pady=5)
         ttk.Label(motor_frame, text="Action").grid(row=0, column=2, padx=5, pady=5)
         ttk.Label(motor_frame, text="Current RPM").grid(row=0, column=3, padx=5, pady=5)
-        
+
         self.speed_entries = []
         
         for i in range(3):
@@ -749,6 +824,8 @@ class ServerGUI:
         self.manual_control_button.config(state="normal")
         # Bật nút Switch Upgrade Mode khi client kết nối vào control server
         self.switch_upgrade_button.config(state="normal")
+        # Bật nút hiển thị trạng thái hiệu chuẩn
+
 
     def disable_buttons(self):
         """Disable all buttons when disconnected"""
@@ -761,6 +838,7 @@ class ServerGUI:
         # The manual control button can remain enabled since it opens a separate window
         # Tắt nút Switch Upgrade Mode khi client ngắt kết nối
         self.switch_upgrade_button.config(state="disabled")
+        self.calib_indicator.config(bg="#F44336", text="Not Calibrated")
     
     def update_encoders(self, encoders):
         """Update the encoder labels with new values"""
@@ -791,7 +869,12 @@ class ServerGUI:
         """Open manual control window for robot navigation"""
         self.control_gui.run()
         self.update_monitor("Manual control window opened")
-
+    def update_calibration_status(self, is_calibrated):
+        """Cập nhật trạng thái hiệu chuẩn của BNO055"""
+        if is_calibrated:
+            self.calib_indicator.config(bg="#4CAF50", text="Calibrated")
+        else:
+            self.calib_indicator.config(bg="#F44336", text="Not Calibrated")
 if __name__ == "__main__":
     root = tk.Tk()
     gui = ServerGUI(root)

@@ -1,5 +1,0 @@
-Time Message
-0.002 W (12576) Motor: Setup Motor Done
-11.837 W (24306) PID: Updated Motor 1 PID values to Kp: 3.000000 Ki: 0.600000 Kd: 0.500000
-12.247 W (24666) PID: Updated Motor 2 PID values to Kp: 3.000000 Ki: 0.600000 Kd: 0.500000
-12.760 W (25156) PID: Updated Motor 3 PID values to Kp: 3.000000 Ki: 0.600000 Kd: 0.500000

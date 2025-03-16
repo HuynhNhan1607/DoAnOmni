@@ -1,5 +1,6 @@
 #define NON_PID 0
 #define LOG_SERVER 1
+#define USE_THETA 0
 
 #define ID_ROBOT 1
 

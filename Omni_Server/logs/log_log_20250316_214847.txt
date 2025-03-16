@@ -1,0 +1,53 @@
+Time Message
+0.002 W (8106) Motor: Setup Motor Done
+1.489 W (9526) bno055: Set calibration offsets - Ok
+1.492 W (9526) bno055: Accel offset: -17 -15 -24    Magnet: 96 396 -112    Gyro: -1 -1 0 Acc_Radius: 1000    Mag_Radius: 1008
+3.526 W (11596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+4.047 W (12096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+4.500 W (12596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+5.069 W (13096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+5.520 W (13596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+6.100 W (14096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+6.603 W (14596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+7.004 W (15096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+7.534 W (15596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+8.038 W (16096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+8.653 W (16596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+9.008 W (17096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+9.521 W (17596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+10.029 W (18096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+10.602 W (18596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+11.117 W (19096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+11.529 W (19596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+12.015 W (20096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+12.553 W (20596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+13.053 W (21096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+13.582 W (21596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+14.025 W (22096) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+14.691 W (22596) bno055: Calib - Sys: 0, Gyro: 0, Accel: 3, Mag: 0
+15.022 W (23096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+15.607 W (23596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+16.001 W (24096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+16.561 W (24596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+17.047 W (25096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+17.563 W (25596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+18.081 W (26096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+18.576 W (26596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+19.105 W (27096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+19.513 W (27596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+20.010 W (28096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+20.628 W (28596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+21.046 W (29096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+21.508 W (29596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+22.019 W (30096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+22.518 W (30596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+23.042 W (31096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+23.604 W (31596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+24.022 W (32096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+24.525 W (32596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+25.142 W (33096) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+25.528 W (33596) bno055: Calib - Sys: 2, Gyro: 0, Accel: 3, Mag: 2
+26.092 W (34096) bno055: Calib - Sys: 3, Gyro: 0, Accel: 3, Mag: 3
+26.097 W (34096) BNO055_Handler: Calib - Sys: 3, Gyro: 0, Accel: 3, Mag: 3
+26.297 W (34216) BNO055_Handler: Accel offset: -17 -15 -24    Magnet: 28 156 64    Gyro: -1 -1 0 Acc_Radius: 1000    Mag_Radius: 1076
+26.300 W (34236) BNO055_Handler: Calibration data saved successfully

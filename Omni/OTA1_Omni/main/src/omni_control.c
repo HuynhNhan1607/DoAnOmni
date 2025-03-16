@@ -2,12 +2,15 @@
 #include <math.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "omni_control.h"
 #include "motor_handler.h"
 #include "sys_config.h"
 #include "pid_handler.h"
 #include "LPF.h"
+#include "bno055_handler.h"
 
 #define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
 #define ROBOT_RADIUS 0.1528 // Khoảng cách từ tâm robot đến bánh xe (m)
@@ -18,6 +21,12 @@ extern PID_t pid_motor[NUM_MOTORS];
 
 extern LPF encoder_lpf[NUM_MOTORS];
 // Quy đổi từ rad/s sang RPM
+TaskHandle_t wheel_speed_task_handle = NULL;
+static float omega[NUM_MOTORS] = {0};
+RobotParams robot;
+
+static const char *TAG = "OMNI_CONTROL";
+
 int m_s_to_rpm(float m_s)
 {
     return (m_s * 1000) / PI; // 1 round = 3PI/50 m
@@ -43,27 +52,15 @@ void calculate_wheel_speeds(const RobotParams *params, float *omega1, float *ome
 
     // printf("Omega1: %f, Omega2: %f, Omega3: %f\n", *omega1, *omega2, *omega3);
 }
-// Task chính để điều khiển robot
-void omni_control(float dot_x, float dot_y, float dot_theta)
+
+void apply_wheel_speeds(void)
 {
     float rpm[NUM_MOTORS];
     int pulse[NUM_MOTORS];
     int direction[NUM_MOTORS];
 
-    float omega[NUM_MOTORS];
-    RobotParams robot = {
-        .dot_x = dot_x,
-        .dot_y = dot_y,
-        .dot_theta = dot_theta,
-        .theta = 0,
-        .wheel_radius = WHEEL_RADIUS,
-        .robot_radius = ROBOT_RADIUS};
-
-    // 🔹 Tính toán vận tốc góc cho từng bánh xe
-    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
-
 #if NON_PID == 1
-    // 🔹 Chuyển đổi sang RPM và Pulse
+    // Chuyển đổi sang RPM và Pulse
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
@@ -83,7 +80,7 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
         }
     }
 
-    // Sau khi tính toán xong, gửi lệnh đồng thời
+    // Gửi lệnh đồng thời
     set_motor_speed(1, direction[0], pulse[0]);
     set_motor_speed(2, direction[1], pulse[1]);
     set_motor_speed(3, direction[2], pulse[2]);
@@ -95,4 +92,57 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
         pid_set_setpoint(&pid_motor[i], rpm[i]);
     }
 #endif
+
+    ESP_LOGI(TAG, "Applied speeds: %.2f, %.2f, %.2f", rpm[0], rpm[1], rpm[2]);
+}
+
+void wheel_speed_calculation_task(void *pvParameters)
+{
+    TickType_t xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+
+    while (1)
+    {
+
+#if USE_THETA == 1
+        float current_heading = get_heading();
+        robot.theta = (current_heading * PI) / 180.0f;
+        ESP_LOGW(TAG, "Recalculating with heading: %.2f° (%.4f rad)", current_heading, robot.theta);
+#endif
+        // Tính toán vận tốc góc mới
+        calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
+
+        apply_wheel_speeds();
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(RECALCULATION_PERIOD_MS));
+    }
+}
+
+void omni_control(float dot_x, float dot_y, float dot_theta)
+{
+    robot.dot_x = dot_x;
+    robot.dot_y = dot_y;
+    robot.dot_theta = dot_theta;
+    robot.theta = 0;
+    robot.wheel_radius = WHEEL_RADIUS;
+    robot.robot_radius = ROBOT_RADIUS;
+#if USE_THETA == 1
+    float current_heading = get_heading();
+    robot.theta = (current_heading * PI) / 180.0f;
+#endif
+    // Dùng để đáp ứng điều khiển ngay lập tức, không phải đợi task chạy
+    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
+    apply_wheel_speeds();
+
+    if (wheel_speed_task_handle == NULL)
+    {
+        xTaskCreate(wheel_speed_calculation_task,
+                    "wheel_speed_task",
+                    2048, // Stack size
+                    NULL,
+                    8, // Priority
+                    &wheel_speed_task_handle);
+
+        ESP_LOGI(TAG, "Wheel speed calculation task started");
+    }
 }

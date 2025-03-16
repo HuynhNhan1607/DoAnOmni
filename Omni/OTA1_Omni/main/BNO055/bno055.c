@@ -435,7 +435,7 @@ esp_err_t bno055_open(i2c_number_t i2c_num, bno055_config_t *p_bno_conf, bno055_
         ESP_LOGD(TAG, "BNO055 ID returned 0x%02X", reg_val);
         if (reg_val == BNO055_ID)
         {
-            ESP_LOGI(TAG, "BNO055 detected \n");
+            ESP_LOGI(TAG, "BNO055 detected");
         }
         else
         {
@@ -468,8 +468,8 @@ esp_err_t bno055_open(i2c_number_t i2c_num, bno055_config_t *p_bno_conf, bno055_
         if (err != ESP_OK)
             goto errExit;
         vTaskDelay(30 / portTICK_PERIOD_MS);
-        ESP_LOGD(TAG, "Set calibration offsets - Ok");
-        printf("Accel offset: %d %d %d\t Magnet: %d %d %d\t Gyro: %d %d %d Acc_Radius: %d\t Mag_Radius: %d\n", offsets.accel_offset_x, offsets.accel_offset_y, offsets.accel_offset_z, offsets.mag_offset_x, offsets.mag_offset_y, offsets.mag_offset_z, offsets.gyro_offset_x, offsets.gyro_offset_y, offsets.gyro_offset_z, offsets.accel_radius, offsets.mag_radius);
+        ESP_LOGW(TAG, "Set calibration offsets - Ok");
+        ESP_LOGW(TAG, "Accel offset: %d %d %d    Magnet: %d %d %d    Gyro: %d %d %d Acc_Radius: %d    Mag_Radius: %d", offsets.accel_offset_x, offsets.accel_offset_y, offsets.accel_offset_z, offsets.mag_offset_x, offsets.mag_offset_y, offsets.mag_offset_z, offsets.gyro_offset_x, offsets.gyro_offset_y, offsets.gyro_offset_z, offsets.accel_radius, offsets.mag_radius);
     }
 #endif
     // Set ext oscillator
@@ -632,28 +632,69 @@ esp_err_t bno055_get_offsets(i2c_number_t i2c_num, bno055_offsets_t *offsets)
     if (offsets == NULL)
         return ESP_ERR_INVALID_ARG;
 
+    bno055_opmode_t current_mode;
     esp_err_t err;
-    uint8_t buffer[22];
+    bool mode_changed = false;
 
-    // Đọc các giá trị offset từ cảm biến
-    err = bno055_read_data(i2c_num, ACCEL_OFFSET_X_LSB_ADDR, buffer, 22);
+    // Kiểm tra mode hiện tại
+    err = bno055_get_opmode(i2c_num, &current_mode);
     if (err != ESP_OK)
         return err;
 
-    // Lưu các giá trị offset vào struct
-    offsets->accel_offset_x = (int16_t)((buffer[1] << 8) | buffer[0]);
-    offsets->accel_offset_y = (int16_t)((buffer[3] << 8) | buffer[2]);
-    offsets->accel_offset_z = (int16_t)((buffer[5] << 8) | buffer[4]);
-    offsets->mag_offset_x = (int16_t)((buffer[7] << 8) | buffer[6]);
-    offsets->mag_offset_y = (int16_t)((buffer[9] << 8) | buffer[8]);
-    offsets->mag_offset_z = (int16_t)((buffer[11] << 8) | buffer[10]);
-    offsets->gyro_offset_x = (int16_t)((buffer[13] << 8) | buffer[12]);
-    offsets->gyro_offset_y = (int16_t)((buffer[15] << 8) | buffer[14]);
-    offsets->gyro_offset_z = (int16_t)((buffer[17] << 8) | buffer[16]);
-    offsets->accel_radius = (int16_t)((buffer[19] << 8) | buffer[18]);
-    offsets->mag_radius = (int16_t)((buffer[21] << 8) | buffer[20]);
+    // Nếu không ở chế độ CONFIG, chuyển sang CONFIG
+    if (current_mode != OPERATION_MODE_CONFIG)
+    {
+        ESP_LOGD(TAG, "Switching to CONFIG mode to read offsets");
+        err = bno055_set_opmode(i2c_num, OPERATION_MODE_CONFIG);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to switch to CONFIG mode: %s", esp_err_to_name(err));
+            return err;
+        }
+        mode_changed = true;
+        vTaskDelay(30 / portTICK_PERIOD_MS); // Đợi chuyển mode
+    }
 
-    return ESP_OK;
+    // Đọc các giá trị offset từ cảm biến
+    uint8_t buffer[22];
+    err = bno055_read_data(i2c_num, ACCEL_OFFSET_X_LSB_ADDR, buffer, 22);
+
+    if (err == ESP_OK)
+    {
+        // Lưu các giá trị offset vào struct
+        offsets->accel_offset_x = (int16_t)((buffer[1] << 8) | buffer[0]);
+        offsets->accel_offset_y = (int16_t)((buffer[3] << 8) | buffer[2]);
+        offsets->accel_offset_z = (int16_t)((buffer[5] << 8) | buffer[4]);
+
+        offsets->mag_offset_x = (int16_t)((buffer[7] << 8) | buffer[6]);
+        offsets->mag_offset_y = (int16_t)((buffer[9] << 8) | buffer[8]);
+        offsets->mag_offset_z = (int16_t)((buffer[11] << 8) | buffer[10]);
+
+        offsets->gyro_offset_x = (int16_t)((buffer[13] << 8) | buffer[12]);
+        offsets->gyro_offset_y = (int16_t)((buffer[15] << 8) | buffer[14]);
+        offsets->gyro_offset_z = (int16_t)((buffer[17] << 8) | buffer[16]);
+
+        offsets->accel_radius = (int16_t)((buffer[19] << 8) | buffer[18]);
+        offsets->mag_radius = (int16_t)((buffer[21] << 8) | buffer[20]);
+    }
+
+    // Khôi phục mode ban đầu nếu đã thay đổi
+    if (mode_changed)
+    {
+        ESP_LOGD(TAG, "Restoring previous operation mode: %d", current_mode);
+        esp_err_t restore_err = bno055_set_opmode(i2c_num, current_mode);
+        if (restore_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to restore operation mode: %s", esp_err_to_name(restore_err));
+            if (err == ESP_OK)
+            {
+                err = restore_err; // Chỉ ghi đè nếu chưa có lỗi trước đó
+            }
+        }
+        vTaskDelay(30 / portTICK_PERIOD_MS); // Đợi chuyển mode
+    }
+
+    return err;
 }
 
 esp_err_t bno055_set_offsets(i2c_number_t i2c_num, bno055_offsets_t *offsets)
@@ -680,21 +721,35 @@ esp_err_t bno055_set_offsets(i2c_number_t i2c_num, bno055_offsets_t *offsets)
     }
     return ESP_OK;
 }
-bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_status)
+bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_status, uint8_t mode)
 {
     esp_err_t err = bno055_get_calib_status(i2c_num, calib_status);
     if (err != ESP_OK)
     {
         return false;
     }
-    // printf("Calib - Sys: %d, Gyro: %d, Accel: %d, Mag: %d\n",
-    //        calib_status->sys, calib_status->gyro,
-    //        calib_status->accel, calib_status->mag);
+    ESP_LOGW(TAG, "Calib - Sys: %d, Gyro: %d, Accel: %d, Mag: %d",
+             calib_status->sys, calib_status->gyro,
+             calib_status->accel, calib_status->mag);
 
-    return (calib_status->sys == 3 &&
-            calib_status->gyro == 3 &&
-            calib_status->accel == 3 &&
-            calib_status->mag == 3);
+    switch (mode)
+    {
+    case OPERATION_MODE_NDOF:
+        return (calib_status->sys == 3 &&
+                calib_status->gyro == 3 &&
+                calib_status->accel == 3 &&
+                calib_status->mag == 3);
+
+    case OPERATION_MODE_M4G:
+        return (calib_status->sys == 3 && calib_status->accel == 3 && calib_status->mag == 3);
+
+    case OPERATION_MODE_IMUPLUS:
+        return (calib_status->sys == 3 && calib_status->gyro == 3 && calib_status->accel == 3);
+
+    default:
+        ESP_LOGE(TAG, "Wrong Fusion mode");
+        return false;
+    }
 }
 
 esp_err_t bno055_get_calib_status_byte(i2c_number_t i2c_num, uint8_t *calib)
