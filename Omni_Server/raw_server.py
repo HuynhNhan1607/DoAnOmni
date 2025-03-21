@@ -50,7 +50,7 @@ class Server:
         if data_type == "encoder":
             self.log_files[data_type].write("Time RPM1 RPM2 RPM3\n")
         elif data_type == "bno055":
-            self.log_files[data_type].write("Time Heading Pitch Roll AccelX AccelY AccelZ GravityX GravityY GravityZ\n")
+            self.log_files[data_type].write("Time Heading Pitch Roll W X Y Z AccelX AccelY AccelZ GravityX GravityY GravityZ\n")
         elif data_type == "log":
             self.log_files[data_type].write("Time Message\n")
             
@@ -273,15 +273,7 @@ class Server:
     # Hàm xử lý dữ liệu BNO055
     def process_bno055_data(self, bno_data):
         """
-        Xử lý dữ liệu BNO055 theo định dạng mới
-        
-        Format dữ liệu:
-        {
-            "time": thời_gian,
-            "euler": [heading, pitch, roll],
-            "lin_accel": [x, y, z],
-            "gravity": [x, y, z]
-        }
+        Xử lý dữ liệu BNO055, chấp nhận bất kỳ trường nào được gửi lên
         """
         try:
             # Kiểm tra xem bno_data có phải dict không
@@ -289,9 +281,8 @@ class Server:
                 self.gui.update_monitor(f"Invalid BNO055 data format, expected dictionary")
                 return
 
-                    # Kiểm tra sự kiện hiệu chuẩn hoàn thành
+            # Kiểm tra sự kiện hiệu chuẩn hoàn thành
             if "event" in bno_data and bno_data["event"] == "calibration_complete":
-                # Hiển thị thông báo hiệu chuẩn hoàn thành
                 status = bno_data.get("status", {})
                 self.gui.update_monitor(
                     f"BNO055 CALIBRATION COMPLETE! Status: Sys={status.get('sys', 0)}, "
@@ -299,45 +290,55 @@ class Server:
                     f"Mag={status.get('mag', 0)}"
                 )
                 self.gui.update_calibration_status(True)
-
-            # Lấy dữ liệu từ JSON
-            time_val = bno_data.get("time", 0)
-            euler = bno_data.get("euler", [0, 0, 0])
-            lin_accel = bno_data.get("lin_accel", [0, 0, 0])
-            gravity = bno_data.get("gravity", [0, 0, 0])
-
-            # Kiểm tra dữ liệu có đủ không
-            if len(euler) < 3 or len(lin_accel) < 3 or len(gravity) < 3:
-                self.gui.update_monitor(f"Incomplete BNO055 data")
                 return
 
-            # Giải nén dữ liệu euler
-            heading, pitch, roll = euler[0], euler[1], euler[2]
+            # Lấy dữ liệu từ JSON - chấp nhận các giá trị mặc định nếu không có
+            time_val = bno_data.get("time", 0)
             
-            # Giải nén dữ liệu gia tốc
-            accel_x, accel_y, accel_z = lin_accel[0], lin_accel[1], lin_accel[2]
+            # Lấy dữ liệu các trường nếu có
+            euler = bno_data.get("euler", None)
+            quaternion = bno_data.get("quaternion", None)
+            lin_accel = bno_data.get("lin_accel", None)
+            gravity = bno_data.get("gravity", None)
             
-            # Giải nén dữ liệu trọng lực
-            gravity_x, gravity_y, gravity_z = gravity[0], gravity[1], gravity[2]
+            # Chuẩn bị dữ liệu để ghi log
+            log_parts = []
+            log_parts.append(f"{time.time() - self.start_times.get('bno055', time.time()):.3f}")
             
-            # # Hiển thị thông tin quan trọng lên UI
-            # self.gui.update_monitor(
-            #     f"BNO055: Heading={heading:.2f}° Pitch={pitch:.2f}° Roll={roll:.2f}° | "
-            #     f"Accel: [{accel_x:.2f}, {accel_y:.2f}, {accel_z:.2f}] m/s²"
-            # )
+            # Xử lý dữ liệu euler nếu có
+            if euler and len(euler) >= 3:
+                heading, pitch, roll = euler[0], euler[1], euler[2]
+                log_parts.extend([f"{heading:.2f}", f"{pitch:.2f}", f"{roll:.2f}"])
+            else:
+                log_parts.extend(["NA", "NA", "NA"])
+                    
+            # Xử lý dữ liệu quaternion nếu có (thêm vào log)
+            if quaternion and len(quaternion) >= 4:
+                w, x, y, z = quaternion[0], quaternion[1], quaternion[2], quaternion[3]
+                log_parts.extend([f"{w:.4f}", f"{x:.4f}", f"{y:.4f}", f"{z:.4f}"])
+            else:
+                log_parts.extend(["NA", "NA", "NA", "NA"])
+                
+            # Xử lý dữ liệu lin_accel nếu có
+            if lin_accel and len(lin_accel) >= 3:
+                accel_x, accel_y, accel_z = lin_accel[0], lin_accel[1], lin_accel[2]
+                log_parts.extend([f"{accel_x:.2f}", f"{accel_y:.2f}", f"{accel_z:.2f}"])
+            else:
+                log_parts.extend(["NA", "NA", "NA"])
+                
+            # Xử lý dữ liệu gravity nếu có
+            if gravity and len(gravity) >= 3:
+                gravity_x, gravity_y, gravity_z = gravity[0], gravity[1], gravity[2]
+                log_parts.extend([f"{gravity_x:.2f}", f"{gravity_y:.2f}", f"{gravity_z:.2f}"])
+            else:
+                log_parts.extend(["NA", "NA", "NA"])
             
             # Ghi log nếu được bật
             self.setup_log_file("bno055")
             if self.log_data and "bno055" in self.log_files:
-                timestamp = time.time() - self.start_times["bno055"]
-                # Lưu đầy đủ dữ liệu
-                self.log_files["bno055"].write(
-                    f"{timestamp:.3f} {heading:.2f} {pitch:.2f} {roll:.2f} "
-                    f"{accel_x:.2f} {accel_y:.2f} {accel_z:.2f} "
-                    f"{gravity_x:.2f} {gravity_y:.2f} {gravity_z:.2f}\n"
-                )
+                self.log_files["bno055"].write(" ".join(log_parts) + "\n")
                 self.log_files["bno055"].flush()
-                
+                    
         except Exception as e:
             self.gui.update_monitor(f"Error processing BNO055 data: {e}")
     # Hàm xử lý thông điệp log từ thiết bị
