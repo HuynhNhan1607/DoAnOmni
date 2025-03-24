@@ -734,6 +734,11 @@ bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_stat
 
     switch (mode)
     {
+    case OPERATION_MODE_NDOF_FMC_OFF:
+        return (calib_status->sys == 3 &&
+                calib_status->gyro == 3 &&
+                calib_status->accel == 3 &&
+                calib_status->mag == 3);
     case OPERATION_MODE_NDOF:
         return (calib_status->sys == 3 &&
                 calib_status->gyro == 3 &&
@@ -743,8 +748,11 @@ bool bno055_is_fully_calibrated(i2c_number_t i2c_num, calib_status_t *calib_stat
     case OPERATION_MODE_M4G:
         return (calib_status->sys == 3 && calib_status->accel == 3 && calib_status->mag == 3);
 
+    case OPERATION_MODE_COMPASS:
+        return (calib_status->sys == 3 && calib_status->accel == 3 && calib_status->mag == 3);
+
     case OPERATION_MODE_IMUPLUS:
-        return (calib_status->sys == 3 && calib_status->gyro == 3 && calib_status->accel == 3);
+        return (calib_status->sys == 3 || (calib_status->gyro == 3 && calib_status->accel == 3));
 
     default:
         ESP_LOGE(TAG, "Wrong Fusion mode");
@@ -802,6 +810,43 @@ esp_err_t bno055_get_quaternion(i2c_number_t i2c_num, bno055_quaternion_t *quat)
         return err;
 
     return _bno055_buf_to_quaternion(x_buffer, quat);
+}
+
+esp_err_t _bno055_buf_to_euler(uint8_t *buffer, bno055_euler_t *euler)
+{
+    int16_t heading, roll, pitch;
+
+    // combine MSB and LSB into 16-bit int
+    heading = (((uint16_t)buffer[1]) << 8) | ((uint16_t)buffer[0]);
+    roll = (((uint16_t)buffer[3]) << 8) | ((uint16_t)buffer[2]);
+    pitch = (((uint16_t)buffer[5]) << 8) | ((uint16_t)buffer[4]);
+
+    // Convert to degrees with resolution of 1/16 degree per LSB
+    const double scale = 1.0 / 16.0;
+    euler->heading = heading * scale;
+    euler->roll = roll * scale;
+    euler->pitch = pitch * scale;
+
+    // Ensure heading is in range [0, 360]
+    if (euler->heading < 0)
+        euler->heading += 360.0;
+
+    return ESP_OK;
+}
+
+esp_err_t bno055_get_euler(i2c_number_t i2c_num, bno055_euler_t *euler)
+{
+    if (!x_bno_dev[i2c_num].bno_is_open)
+    {
+        ESP_LOGE(TAG, "bno055_get_euler(): device is not open");
+        return BNO_ERR_NOT_OPEN;
+    }
+
+    esp_err_t err = bno055_read_data(i2c_num, BNO055_EULER_H_LSB_ADDR, x_buffer, 6);
+    if (err != ESP_OK)
+        return err;
+
+    return _bno055_buf_to_euler(x_buffer, euler);
 }
 
 esp_err_t bno055_quaternion_to_euler(bno055_quaternion_t *quat, bno055_euler_t *euler)
@@ -898,6 +943,25 @@ esp_err_t bno055_get_fusion_data(i2c_number_t i2c_num, bno055_quaternion_t *quat
     _bno055_buf_to_quaternion(x_buffer, quat);
     _bno055_buf_to_lin_accel(x_buffer + 8, lin_accel);
     _bno055_buf_to_gravity(x_buffer + 14, gravity);
+
+    return ESP_OK;
+}
+
+esp_err_t bno055_get_orientation_data(i2c_number_t i2c_num, bno055_quaternion_t *quat, bno055_euler_t *euler)
+{
+    if (!x_bno_dev[i2c_num].bno_is_open)
+    {
+        ESP_LOGE(TAG, "bno055_get_orientation_data(): device is not open");
+        return BNO_ERR_NOT_OPEN;
+    }
+
+    esp_err_t err = bno055_read_data(i2c_num, BNO055_EULER_H_LSB_ADDR, x_buffer, 14);
+    if (err != ESP_OK)
+        return err;
+
+    _bno055_buf_to_euler(x_buffer, euler);
+
+    _bno055_buf_to_quaternion(x_buffer + 6, quat);
 
     return ESP_OK;
 }

@@ -13,7 +13,7 @@
 
 #include <math.h>
 
-#define BNO_MODE OPERATION_MODE_M4G
+#define BNO_MODE OPERATION_MODE_NDOF
 
 static const char *TAG_IMU = "BNO055_Handler";
 
@@ -306,8 +306,9 @@ void calibration_task(void *pvParameters)
         // Đợi một khoảng thời gian trước khi kiểm tra lại
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Chuan bi san sang truoc khi do
 
-    bno055_set_yaw_reference();
+    // bno055_set_yaw_reference();
 
     xTaskCreatePinnedToCore(ndof_task,
                             "ndof_task",
@@ -321,7 +322,7 @@ void calibration_task(void *pvParameters)
     calib_task_handle = NULL;
     vTaskDelete(NULL);
 }
-
+/* Gửi Fusion Data
 void ndof_task(void *pvParameters)
 {
     int sock = global_socket;
@@ -336,6 +337,7 @@ void ndof_task(void *pvParameters)
 
     while (1)
     {
+
         time_mks = esp_timer_get_time();
 
         // Đọc dữ liệu quaternion, linear accel và gravity trong một lần gọi
@@ -378,6 +380,59 @@ void ndof_task(void *pvParameters)
             printf("Failed to send IMU data\n");
         }
 
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BNO_POLLING_MS));
+    }
+}
+*/
+void ndof_task(void *pvParameters)
+{
+    int sock = global_socket;
+
+    TickType_t xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+    esp_err_t err;
+    int64_t time_mks, time_mks_after;
+    int time_bno;
+
+    char json_buffer[512];
+
+    while (1)
+    {
+        time_mks = esp_timer_get_time();
+
+        err = bno055_get_orientation_data(i2c_num, &quat, &euler);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG_IMU, "bno055_get_orientation_data() returned error: %02x", err);
+            handle_sensor_error(i2c_num, err);
+            taskYIELD();
+            continue;
+        }
+
+        // adjusted_heading = get_adjusted_heading(euler.heading);
+
+        time_mks_after = esp_timer_get_time();
+        time_bno = time_mks_after - time_mks;
+
+        snprintf(json_buffer, sizeof(json_buffer),
+                 "{"
+                 "\"id\":%d,"
+                 "\"type\":\"bno055\","
+                 "\"data\":{"
+                 "\"time\":%10d,"
+                 "\"euler\":[%.4f,%.4f,%.4f],"
+                 "\"quaternion\":[%.4f,%.4f,%.4f,%.4f]"
+                 "}"
+                 "}\n",
+                 ID_ROBOT, time_bno,
+                 euler.heading, euler.pitch, euler.roll,
+                 quat.w, quat.x, quat.y, quat.z);
+
+        if (send(sock, json_buffer, strlen(json_buffer), 0) < 0)
+        {
+            ESP_LOGE(TAG_IMU, "Failed to send IMU data");
+            printf("Failed to send IMU data\n");
+        }
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BNO_POLLING_MS));
     }
 }

@@ -218,4 +218,5 @@ esp_err_t bno055_get_gravity(i2c_number_t i2c_num, bno055_vec3_t *gravity);
 
 esp_err_t bno055_get_fusion_data(i2c_number_t i2c_num, bno055_quaternion_t *quat, bno055_vec3_t *lin_accel, bno055_vec3_t *gravity);
 
+esp_err_t bno055_get_orientation_data(i2c_number_t i2c_num, bno055_quaternion_t *quat, bno055_euler_t *euler);
 #endif // _BNO055_H_
