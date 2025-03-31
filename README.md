@@ -22,7 +22,7 @@ This project implements a control system for an omnidirectional (holonomic) robo
 
 ## Software Requirements
 - ESP-IDF (ESP32 Development Framework)
-- WiFi Network
+- Python 3
 
 ## Setup Instructions
 1. **Clone the Repository**
@@ -37,17 +37,6 @@ This project implements a control system for an omnidirectional (holonomic) robo
    #define WIFI_SSID "your_ssid"
    #define WIFI_PASS "your_password"
    #define SERVER_IP "your_server_ip"
-   ```
-
-3. **Build and Flash**
-   ```
-   idf.py build
-   idf.py -p [PORT] flash
-   ```
-
-4. **Monitor Output**
-   ```
-   idf.py -p [PORT] monitor
    ```
 
 ## Usage
