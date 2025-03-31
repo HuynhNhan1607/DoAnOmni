@@ -212,7 +212,7 @@ esp_err_t bno055_get_calib_status_byte(i2c_number_t i2c_num, uint8_t *calib);
 
 esp_err_t bno055_get_quaternion(i2c_number_t i2c_num, bno055_quaternion_t *quat);
 esp_err_t bno055_quaternion_to_euler(bno055_quaternion_t *quat, bno055_euler_t *euler);
-
+esp_err_t bno055_get_euler(i2c_number_t i2c_num, bno055_euler_t *euler);
 esp_err_t bno055_get_lin_accel(i2c_number_t i2c_num, bno055_vec3_t *lin_accel);
 esp_err_t bno055_get_gravity(i2c_number_t i2c_num, bno055_vec3_t *gravity);
 

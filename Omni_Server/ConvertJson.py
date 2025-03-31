@@ -139,11 +139,11 @@ def generate_json_strings(data):
 
 def main():
     parser = argparse.ArgumentParser(description='Convert Omni logs to JSON format')
-    parser.add_argument('--encoder-log', default='logs/encoder_log_20250320_232232.txt', 
+    parser.add_argument('--encoder-log', default='logs/encoder_log_20250328_100755.txt', 
                        help='Path to encoder log file')
-    parser.add_argument('--system-log', default='logs/log_log_20250320_232232.txt',
+    parser.add_argument('--system-log', default='logs/log_log_20250328_100755.txt',
                        help='Path to system log file')
-    parser.add_argument('--imu-log', default='logs/bno055_log_20250320_232246.txt',
+    parser.add_argument('--imu-log', default='logs/bno055_log_20250328_100755.txt',
                        help='Path to IMU log file')
     parser.add_argument('--output-dir', default='json_data',
                        help='Output directory for JSON files')

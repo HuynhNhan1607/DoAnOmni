@@ -146,5 +146,7 @@ void app_main()
     setup_pwm();
     xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
+#if USE_BNO055 == 1
     bno055_start(&socket);
+#endif
 }

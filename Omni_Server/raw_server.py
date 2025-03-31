@@ -37,16 +37,26 @@ class Server:
     
         # Tạo file log mới cho loại dữ liệu
     def setup_log_file(self, data_type):
-        if not self.log_data or data_type in self.log_files:
+        if not self.log_data:
             return
             
+        # If this is our first log file, initialize the common start time
+        if not hasattr(self, 'common_start_time') or not self.log_files:
+            self.common_start_time = time.time()
+            self.gui.update_monitor(f"Starting new logging session at {time.strftime('%H:%M:%S')}")
+        
+        # Skip if this type is already being logged
+        if data_type in self.log_files:
+            return
+                
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
-        log_filename = f"{log_dir}/{data_type}_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+        session_id = time.strftime('%Y%m%d_%H%M%S', time.localtime(self.common_start_time))
+        log_filename = f"{log_dir}/{data_type}_log_{session_id}.txt"
         
         self.log_files[data_type] = open(log_filename, "w")
         
-        # Tạo header dựa vào loại dữ liệu
+        # Create header based on data type
         if data_type == "encoder":
             self.log_files[data_type].write("Time RPM1 RPM2 RPM3\n")
         elif data_type == "bno055":
@@ -54,7 +64,6 @@ class Server:
         elif data_type == "log":
             self.log_files[data_type].write("Time Message\n")
             
-        self.start_times[data_type] = time.time()
         self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
     
     # Đóng tất cả file log
@@ -266,7 +275,7 @@ class Server:
         # Ghi log nếu được bật
         self.setup_log_file("encoder")
         if self.log_data and "encoder" in self.log_files:
-            timestamp = time.time() - self.start_times["encoder"]
+            timestamp = time.time() - self.common_start_time
             self.log_files["encoder"].write(f"{timestamp:.3f} {' '.join([str(e) for e in self.encoders])}\n")
             self.log_files["encoder"].flush()
 
@@ -303,7 +312,7 @@ class Server:
             
             # Chuẩn bị dữ liệu để ghi log
             log_parts = []
-            log_parts.append(f"{time.time() - self.start_times.get('bno055', time.time()):.3f}")
+            log_parts.append(f"{time.time() - self.common_start_time:.3f}")
             
             # Xử lý dữ liệu euler nếu có
             if euler and len(euler) >= 3:
@@ -349,7 +358,7 @@ class Server:
         # Ghi log nếu được bật
         self.setup_log_file("log")
         if self.log_data and "log" in self.log_files:
-            timestamp = time.time() - self.start_times["log"]
+            timestamp = time.time() - self.common_start_time
             self.log_files["log"].write(f"{timestamp:.3f} {log_message}\n")
             self.log_files["log"].flush()
 

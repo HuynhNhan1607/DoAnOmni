@@ -13,7 +13,7 @@
 
 #include <math.h>
 
-#define BNO_MODE OPERATION_MODE_NDOF
+#define BNO_MODE OPERATION_MODE_IMUPLUS
 
 static const char *TAG_IMU = "BNO055_Handler";
 
@@ -36,12 +36,25 @@ static bool calibration_complete = false;
 static float yaw_offset = 0.0f;
 static bool apply_yaw_offset = false;
 
+static SemaphoreHandle_t heading_mutex = NULL;
+
 float adjusted_heading = 0.0f;
 
 float get_heading()
 {
-    return adjusted_heading;
+    float result = 0.0f;
+    if (heading_mutex != NULL && xSemaphoreTake(heading_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
+    {
+        result = adjusted_heading;
+        xSemaphoreGive(heading_mutex);
+    }
+    else
+    {
+        ESP_LOGW(TAG_IMU, "Failed to take heading mutex");
+    }
+    return result;
 }
+
 void blink_led_task(void *pvParameters)
 {
     gpio_num_t led_gpio = *(gpio_num_t *)pvParameters;
@@ -85,22 +98,30 @@ void handle_sensor_error(i2c_number_t i2c_num, esp_err_t err_code)
 void send_calibration_notification(int sock, calib_status_t status)
 {
     char calib_json[256];
-    snprintf(calib_json, sizeof(calib_json),
-             "{"
-             "\"id\":%d,"
-             "\"type\":\"bno055\","
-             "\"data\":{"
-             "\"event\":\"calibration_complete\","
-             "\"status\":{\"sys\":%d,\"gyro\":%d,\"accel\":%d,\"mag\":%d}"
-             "}"
-             "}\n",
-             ID_ROBOT, status.sys, status.gyro, status.accel, status.mag);
+    int len = snprintf(calib_json, sizeof(calib_json),
+                       "{"
+                       "\"id\":%d,"
+                       "\"type\":\"bno055\","
+                       "\"data\":{"
+                       "\"event\":\"calibration_complete\","
+                       "\"status\":{\"sys\":%d,\"gyro\":%d,\"accel\":%d,\"mag\":%d}"
+                       "}"
+                       "}\n",
+                       ID_ROBOT, status.sys, status.gyro, status.accel, status.mag);
 
-    if (send(sock, calib_json, strlen(calib_json), 0) < 0)
+    if (len >= sizeof(calib_json))
+    {
+        ESP_LOGE(TAG_IMU, "Calibration JSON buffer overflow");
+        return;
+    }
+    if (sock >= 0 && send(sock, calib_json, strlen(calib_json), 0) < 0)
     {
         ESP_LOGE(TAG_IMU, "Failed to send calibration notification");
     }
-    ESP_LOGI(TAG_IMU, "Calibration notification sent successfully");
+    else
+    {
+        ESP_LOGI(TAG_IMU, "Calibration notification sent successfully");
+    }
 }
 
 void bno055_set_yaw_reference(void)
@@ -111,65 +132,81 @@ void bno055_set_yaw_reference(void)
     float current_heading = 0.0f;
     float prev_heading = 0.0f;
     int stable_count = 0;
-    const int REQUIRED_STABLE_COUNT = 20;    // Số lần đọc liên tiếp cần ổn định
-    const float STABILITY_THRESHOLD = 0.01f; // Độ chênh lệch cho phép
+    const int REQUIRED_STABLE_COUNT = 10;    // Number of consecutive stable readings required
+    const float STABILITY_THRESHOLD = 0.05f; // Maximum allowed difference between readings
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    err = bno055_get_fusion_data(i2c_num, &quat, &lin_accel, &gravity);
+    // Get initial heading value
+    err = bno055_get_euler(i2c_num, &euler);
     if (err == ESP_OK)
     {
-        err = bno055_quaternion_to_euler(&quat, &euler);
-        if (err == ESP_OK)
-        {
-            prev_heading = euler.heading;
-        }
+        prev_heading = euler.heading;
+        ESP_LOGI(TAG_IMU, "Initial heading: %.2f degrees", prev_heading);
     }
-    for (int i = 0; i < 50; i++)
+    else
     {
-        err = bno055_get_fusion_data(i2c_num, &quat, &lin_accel, &gravity);
+        ESP_LOGE(TAG_IMU, "Failed to get initial heading: 0x%02X", err);
+        // Continue anyway and try in the main loop
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // Begin looking for stable heading
+    for (int i = 0; i < 25; i++)
+    {
+        // Read Euler angles directly
+        err = bno055_get_euler(i2c_num, &euler);
+
         if (err != ESP_OK)
         {
-            stable_count = 0; // Reset nếu đọc lỗi
+            ESP_LOGE(TAG_IMU, "Error reading orientation data: 0x%02X", err);
+            stable_count = 0; // Reset stability counter on error
             continue;
         }
-        err = bno055_quaternion_to_euler(&quat, &euler);
-        if (err != ESP_OK)
-        {
-            stable_count = 0; // Reset nếu đọc lỗi
-            continue;
-        }
+
         current_heading = euler.heading;
         float diff = fabs(current_heading - prev_heading);
 
-        ESP_LOGI(TAG_IMU, "Reading %d: %.2f, diff: %.2f", i, current_heading, diff);
+        ESP_LOGI(TAG_IMU, "Reading %d: %.2f, diff: %.4f", i, current_heading, diff);
 
+        // Check if current reading is stable compared to previous
         if (diff <= STABILITY_THRESHOLD)
         {
             stable_count++;
-
             ESP_LOGD(TAG_IMU, "Stable reading #%d: %.2f", stable_count, current_heading);
 
+            // Check if we have enough consecutive stable readings
             if (stable_count >= REQUIRED_STABLE_COUNT)
             {
-                // Sử dụng giá trị hiện tại làm offset
+                // Set current value as yaw reference offset
                 yaw_offset = current_heading;
                 apply_yaw_offset = true;
 
                 ESP_LOGI(TAG_IMU, "Yaw reference set to %.2f after %d stable readings",
                          yaw_offset, stable_count);
+
+                // Additional log to confirm values are set
+                ESP_LOGW(TAG_IMU, "apply_yaw_offset set to %d with offset %.2f",
+                         apply_yaw_offset, yaw_offset);
                 return;
             }
         }
         else
         {
-            ESP_LOGD(TAG_IMU, "Unstable change detected: %.2f", diff);
-            stable_count = 0;
+            ESP_LOGW(TAG_IMU, "Unstable change detected: %.4f", diff);
+            stable_count = 0; // Reset stability counter
         }
+
         prev_heading = current_heading;
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+
+    // If we couldn't find a stable value, use the last reading as fallback
     ESP_LOGW(TAG_IMU, "Could not find stable heading after 50 attempts");
+    ESP_LOGW(TAG_IMU, "Setting current heading as reference: %.2f", current_heading);
+
+    yaw_offset = current_heading;
+    apply_yaw_offset = true;
+
+    ESP_LOGW(TAG_IMU, "apply_yaw_offset set to %d with offset %.2f",
+             apply_yaw_offset, yaw_offset);
 }
 
 float get_adjusted_heading(float raw_heading)
@@ -221,17 +258,6 @@ void reinit_sensor(void *pvParameters)
             if (ndof_task_handle != NULL)
             {
                 vTaskResume(ndof_task_handle);
-            }
-            else
-            {
-                // Tạo task nếu chưa tồn tại
-                xTaskCreatePinnedToCore(ndof_task,
-                                        "ndof_task",
-                                        4096,
-                                        NULL,
-                                        10,
-                                        &ndof_task_handle,
-                                        1);
             }
             vTaskDelete(NULL);
             break;
@@ -290,12 +316,6 @@ void calibration_task(void *pvParameters)
 
                 // Bật LED chỉ thị
                 gpio_set_level(led_gpio, 1);
-
-                // Gửi thông báo hiệu chuẩn hoàn tất
-                if (sock >= 0)
-                {
-                    send_calibration_notification(sock, calib_status);
-                }
             }
             else
             {
@@ -306,9 +326,9 @@ void calibration_task(void *pvParameters)
         // Đợi một khoảng thời gian trước khi kiểm tra lại
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    vTaskDelay(pdMS_TO_TICKS(2000)); // Chuan bi san sang truoc khi do
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Chuan bi san sang truoc khi do
 
-    // bno055_set_yaw_reference();
+    bno055_set_yaw_reference();
 
     xTaskCreatePinnedToCore(ndof_task,
                             "ndof_task",
@@ -319,71 +339,15 @@ void calibration_task(void *pvParameters)
                             1);
     // Task hoàn thành và xóa chính nó
     ESP_LOGI(TAG_IMU, "Calibration task complete");
+    // Gửi thông báo hiệu chuẩn hoàn tất
+    if (sock >= 0)
+    {
+        send_calibration_notification(sock, calib_status);
+    }
     calib_task_handle = NULL;
     vTaskDelete(NULL);
 }
-/* Gửi Fusion Data
-void ndof_task(void *pvParameters)
-{
-    int sock = global_socket;
 
-    TickType_t xLastWakeTime;
-    xLastWakeTime = xTaskGetTickCount();
-    esp_err_t err;
-    int64_t time_mks, time_mks_after;
-    int time_bno;
-
-    char json_buffer[512];
-
-    while (1)
-    {
-
-        time_mks = esp_timer_get_time();
-
-        // Đọc dữ liệu quaternion, linear accel và gravity trong một lần gọi
-        err = bno055_get_fusion_data(i2c_num, &quat, &lin_accel, &gravity);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_IMU, "bno055_get_fusion_data() returned error: %02x", err);
-            handle_sensor_error(i2c_num, err);
-            taskYIELD();
-            continue;
-        }
-
-        err = bno055_quaternion_to_euler(&quat, &euler);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG_IMU, "bno055_quaternion_to_euler() returned error: %02x", err);
-        }
-        adjusted_heading = get_adjusted_heading(euler.heading);
-
-        time_mks_after = esp_timer_get_time();
-        time_bno = time_mks_after - time_mks;
-
-        snprintf(json_buffer, sizeof(json_buffer),
-                 "{"
-                 "\"id\":%d,"
-                 "\"type\":\"bno055\","
-                 "\"data\":{"
-                 "\"time\":%10d,"
-                 "\"euler\":[%.4f,%.4f,%.4f],"
-                 "\"lin_accel\":[%.4f,%.4f,%.4f],"
-                 "\"gravity\":[%.4f,%.4f,%.4f]"
-                 "}"
-                 "}\n",
-                 ID_ROBOT, time_bno, adjusted_heading, euler.pitch, euler.roll,
-                 lin_accel.x, lin_accel.y, lin_accel.z, gravity.x, gravity.y, gravity.z);
-
-        if (send(sock, json_buffer, strlen(json_buffer), 0) < 0)
-        {
-            ESP_LOGE(TAG_IMU, "Failed to send IMU data");
-            printf("Failed to send IMU data\n");
-        }
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BNO_POLLING_MS));
-    }
-}
-*/
 void ndof_task(void *pvParameters)
 {
     int sock = global_socket;
@@ -409,7 +373,17 @@ void ndof_task(void *pvParameters)
             continue;
         }
 
-        // adjusted_heading = get_adjusted_heading(euler.heading);
+        // err = bno055_quaternion_to_euler(&quat, &euler);
+        // if (err != ESP_OK)
+        // {
+        //     ESP_LOGE(TAG_IMU, "bno055_quaternion_to_euler() returned error: %02x", err);
+        // }
+
+        if (xSemaphoreTake(heading_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
+        {
+            adjusted_heading = get_adjusted_heading(euler.heading);
+            xSemaphoreGive(heading_mutex);
+        }
 
         time_mks_after = esp_timer_get_time();
         time_bno = time_mks_after - time_mks;
@@ -425,7 +399,7 @@ void ndof_task(void *pvParameters)
                  "}"
                  "}\n",
                  ID_ROBOT, time_bno,
-                 euler.heading, euler.pitch, euler.roll,
+                 adjusted_heading, euler.pitch, euler.roll,
                  quat.w, quat.x, quat.y, quat.z);
 
         if (send(sock, json_buffer, strlen(json_buffer), 0) < 0)
@@ -455,7 +429,7 @@ void bno055_start(int *socket)
     err = bno055_set_default_conf(&bno_conf);
     err = bno055_open(i2c_num, &bno_conf, BNO_MODE);
     ESP_LOGI(TAG_IMU, "bno055_open() returned 0x%02X", err);
-
+    heading_mutex = xSemaphoreCreateMutex();
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG_IMU, "Program terminated! returned 0x%02X", err);
@@ -478,7 +452,7 @@ void bno055_start(int *socket)
         // Tạo task hiệu chuẩn với ưu tiên cao hơn
         xTaskCreatePinnedToCore(calibration_task,
                                 "calib_task",
-                                2048,
+                                4096,
                                 NULL,
                                 11, // Ưu tiên cao hơn ndof_task
                                 &calib_task_handle,
