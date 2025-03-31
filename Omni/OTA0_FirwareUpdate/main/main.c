@@ -21,6 +21,14 @@
 // #define WIFI_PASS "25102004"
 // #define SERVER_IP "192.168.189.85"
 
+// #define WIFI_SSID "CEEC_Tenda"
+// #define WIFI_PASS "1denmuoi1"
+// #define SERVER_IP "192.168.2.126"
+
+// #define WIFI_SSID "UIT_CAR_RACING_2023"
+// #define WIFI_PASS "sinhvien_CEEC"
+// #define SERVER_IP "192.168.7.126"
+
 #define SERVER_PORT 12345
 
 static const char *TAG = "Custom_OTA";

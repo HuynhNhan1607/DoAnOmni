@@ -6,6 +6,7 @@
  * @brief Header file for omni control functionality.
  */
 
+#define RECALCULATION_PERIOD_MS 500
 typedef struct
 {
     float dot_x;        // Vận tốc theo trục x (m/s)

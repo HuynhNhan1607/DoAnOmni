@@ -1,3 +1,4 @@
 **/build/
 DOAN/Omni_Server/__pycache__/
 DOAN/Omni_Server/*.txt
+Omni_Server/logs/

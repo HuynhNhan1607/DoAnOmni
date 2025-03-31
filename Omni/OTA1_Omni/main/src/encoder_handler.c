@@ -117,7 +117,9 @@ void task_send_encoder(void *pvParameters)
     int sock = *(int *)pvParameters;
     ESP_LOGI(TAG, "Start Encoder Task");
 
-    char message[64];
+    char message[256];
+    int message_len = 0;
+
     TickType_t last_wake_time = xTaskGetTickCount();
 
     int encoder_count[3] = {0};
@@ -128,8 +130,11 @@ void task_send_encoder(void *pvParameters)
         read_rpm(TIME_INTERVAL);
         // read_encoders(encoder_count);
 #endif
-        snprintf(message, sizeof(message), "1:%.2f;2:%.2f;3:%.2f\n", encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
+        // snprintf(message, sizeof(message), "1:%.2f;2:%.2f;3:%.2f\n", encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
         // snprintf(message, sizeof(message), "1:%d;2:%d;3:%d\n", encoder_count[0], encoder_count[1], encoder_count[2]);
+        message_len = snprintf(message, sizeof(message),
+                               "{\"id\":%d,\"type\":\"encoder\",\"data\":[%.2f,%.2f,%.2f]}\n",
+                               ID_ROBOT, encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
         if (send(sock, message, strlen(message), 0) < 0)
         {
             ESP_LOGE(TAG, "Failed to send encoder data");
