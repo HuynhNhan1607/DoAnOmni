@@ -10,7 +10,7 @@ from raw_control import ControlGUI
 
 from rpm_plot import update_rpm_plot
 from rpm_plot import rpm_plotter
-
+from trajectory_visualization import trajectory_visualizer
 
 class Server:
     def __init__(self, gui):
@@ -272,6 +272,9 @@ class Server:
         self.gui.update_encoders(self.encoders)
         update_rpm_plot(self.encoders)
         
+        trajectory_visualizer.update_trajectory(self.encoders)
+    
+
         # Ghi log nếu được bật
         self.setup_log_file("encoder")
         if self.log_data and "encoder" in self.log_files:
@@ -485,6 +488,10 @@ class Server:
             self.gui.update_monitor("Sent 'Set PID' command to the client.")
         except Exception as e:
             self.gui.update_monitor(f"Failed to send 'Set PID' command: {e}")
+    def show_trajectory_plot(self):
+        """Display the trajectory visualization window"""
+        trajectory_visualizer.show()
+        self.gui.update_monitor("Trajectory visualization displayed")
 
     def show_rpm_plot(self):
         """Display the RPM plot window"""
@@ -698,17 +705,22 @@ class ServerGUI:
         pid_frame.pack(fill="x", pady=5)
         
         # Buttons for PID control
-        ttk.Button(pid_frame, text="Start PID Monitor", 
-                  command=self.server.send_set_pid).grid(row=0, column=0, padx=5, pady=5)
-                  
+        ttk.Button(pid_frame, text="Start PID", 
+                command=self.server.send_set_pid).grid(row=0, column=0, padx=5, pady=5)
+                
         ttk.Button(pid_frame, text="Show RPM Plot", 
-                  command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)
-                  
+                command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)
+
+        # Add new button for trajectory visualization          
+        ttk.Button(pid_frame, text="Show Trajectory", 
+                command=self.server.show_trajectory_plot).grid(row=0, column=2, padx=5, pady=5)
+                
+        # Move these buttons one column to the right
         ttk.Button(pid_frame, text="Save PID Config", 
-                  command=self.server.save_pid_config).grid(row=0, column=2, padx=5, pady=5)
-                  
+                command=self.server.save_pid_config).grid(row=0, column=3, padx=5, pady=5)
+                
         ttk.Button(pid_frame, text="Load PID Config", 
-                  command=self.server.load_pid_config).grid(row=0, column=3, padx=5, pady=5)
+                command=self.server.load_pid_config).grid(row=0, column=4, padx=5, pady=5)
         
         # Labels for PID columns
         ttk.Label(pid_frame, text="Motor").grid(row=1, column=0, padx=5, pady=5)

@@ -1,35 +1,84 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
+# Omni-Directional Robot Control System
 
-# _Sample project_
+## Overview
+This project implements a control system for an omnidirectional (holonomic) robot platform based on the ESP32 microcontroller. The system provides precise control of a three-wheeled omnidirectional robot with integrated orientation sensing, motor control, and wireless communication capabilities.
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+## Features
+- **Omnidirectional Movement**: Precise control in any direction (X, Y, and rotational)
+- **BNO055 IMU Integration**: Orientation sensing and calibration
+- **PID Control**: Closed-loop velocity control for each motor
+- **WiFi Connectivity**: Remote control and telemetry via WiFi
+- **OTA Updates**: Over-The-Air firmware updates
+- **Real-time Feedback**: Speed and orientation feedback
+- **Configurable Parameters**: Easily adjustable system parameters
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+## Hardware Requirements
+- ESP32 Development Board
+- BNO055 IMU Sensor
+- 3 DC Motors with Encoders (1980 pulses per revolution)
+- Motor Drivers
+- Power Supply
+- Omnidirectional Wheel Assembly
 
+## Software Requirements
+- ESP-IDF (ESP32 Development Framework)
+- WiFi Network
 
+## Setup Instructions
+1. **Clone the Repository**
+   ```
+   git clone [repository-url]
+   cd Omni
+   ```
 
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
+2. **Configure WiFi Settings**
+   Edit `main/inc/sys_config.h` with your WiFi credentials and server IP:
+   ```c
+   #define WIFI_SSID "your_ssid"
+   #define WIFI_PASS "your_password"
+   #define SERVER_IP "your_server_ip"
+   ```
 
-## Example folder contents
+3. **Build and Flash**
+   ```
+   idf.py build
+   idf.py -p [PORT] flash
+   ```
 
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
+4. **Monitor Output**
+   ```
+   idf.py -p [PORT] monitor
+   ```
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
+## Usage
+1. **Basic Control**
+   - Send movement commands via WiFi socket connection
+   - Format: JSON commands for velocity and direction
 
-Below is short explanation of remaining files in the project folder.
+2. **Calibration**
+   - The BNO055 IMU requires calibration before accurate readings
+   - System reports calibration status via socket connection
 
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+3. **OTA Updates**
+   - Send "Upgrade" command to the device to enter OTA mode
+
+4. **PID Tuning**
+   - Send "Set PID" command followed by parameter values
+
+## System Architecture
+- **Motor Control**: Direct control of 3 motors with encoder feedback
+- **Sensor Integration**: BNO055 IMU for orientation
+- **Communication**: WiFi socket-based interface with server
+- **Motion Control**: Velocity and direction calculations for omnidirectional movement
+
+## Configuration
+Key parameters can be adjusted in `sys_config.h` and other header files:
+- Robot dimensions in `omni_control.h`
+- PID parameters
+- Communication settings
+- IMU configuration
+
+## Troubleshooting
+- **Connection Issues**: Verify WiFi credentials and server IP
+- **Movement Problems**: Check encoder connections and motor wiring
+- **Orientation Drift**: Ensure proper IMU calibration
