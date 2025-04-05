@@ -152,8 +152,11 @@ class RobotPositionVisualizer:
             self.ax.grid(True, linewidth=0.8)
             self.ax.set_facecolor('#f8f8f8')
             
-            # Draw robot at current position
-            self._draw_robot(self.x, self.y, self.theta)
+            # Sử dụng theta ở radian cho việc vẽ (numpy sử dụng radian)
+            theta_rad = math.radians(self.theta)
+            
+            # Draw robot at current position using theta in radians
+            self._draw_robot(self.x, self.y, theta_rad)
             
             # Format plot
             self.ax.set_aspect('equal')
@@ -161,18 +164,19 @@ class RobotPositionVisualizer:
             self.ax.set_ylabel('Y Position (m)')
             self.ax.set_title('Robot Position (Data from Robot)')
             
-            # Show position text
-            normalized_theta_deg = np.degrees(self.normalize_angle(self.theta))
+            # Hiển thị vị trí và góc gốc (đã là degree)
             self.ax.text(self.PLOT_X_MAX - 1.0, self.PLOT_Y_MAX - 0.5,
-                        f'Position: ({self.x:.2f}m, {self.y:.2f}m)\n'
-                        f'Heading: {normalized_theta_deg:.1f}°', 
+                        f'Vị trí: ({self.x:.2f}m, {self.y:.2f}m)\n'
+                        f'Góc: {self.theta:.1f}°', 
                         fontsize=10, fontweight='bold',
                         bbox=dict(facecolor='yellow', alpha=0.8, boxstyle='round,pad=0.5'))
             
             self.canvas.draw()
     
     def _draw_robot(self, x, y, theta):
-        """Draw robot at specified position and orientation"""
+        """Draw robot at specified position and orientation
+        theta is in radians
+        """
         # Draw robot body
         robot_body = plt.Circle((x, y), self.robot_radius, fill=False, color='r', linewidth=1.5)
         self.ax.add_patch(robot_body)
