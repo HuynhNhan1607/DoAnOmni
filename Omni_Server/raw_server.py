@@ -10,8 +10,10 @@ from raw_control import ControlGUI
 
 from rpm_plot import update_rpm_plot
 from rpm_plot import rpm_plotter
-from trajectory_visualization import trajectory_visualizer
 
+from raw_position import robot_position_visualizer
+
+from server_trajection import trajectory_visualizer
 class Server:
     def __init__(self, gui):
         self.gui = gui
@@ -21,6 +23,7 @@ class Server:
         self.file_path = None
         self.speed = [0, 0, 0]  # Speed for three motors
         self.encoders = [0, 0, 0]  # Encoder values for three motors
+        self.bno055_heading = 0.0
         self.pid_values = [[0.0, 0.0, 0.0] for _ in range(3)]  # PID values as floats
         self.bno055_calibrated = False
 
@@ -33,7 +36,7 @@ class Server:
                 # Khởi tạo dictionary để quản lý file log
         self.log_files = {}
         self.start_times = {}
-        self.supported_types = ["encoder", "bno055", "log"]
+        self.supported_types = ["encoder", "bno055", "log", "position"]
     
         # Tạo file log mới cho loại dữ liệu
     def setup_log_file(self, data_type):
@@ -63,7 +66,8 @@ class Server:
             self.log_files[data_type].write("Time Heading Pitch Roll W X Y Z AccelX AccelY AccelZ GravityX GravityY GravityZ\n")
         elif data_type == "log":
             self.log_files[data_type].write("Time Message\n")
-            
+        elif data_type == "position":
+            self.log_files[data_type].write("Time X Y Theta\n")    
         self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
     
     # Đóng tất cả file log
@@ -272,8 +276,7 @@ class Server:
         self.gui.update_encoders(self.encoders)
         update_rpm_plot(self.encoders)
         
-        trajectory_visualizer.update_trajectory(self.encoders)
-    
+        trajectory_visualizer.update_trajectory(self.encoders, self.bno055_heading)
 
         # Ghi log nếu được bật
         self.setup_log_file("encoder")
@@ -320,6 +323,9 @@ class Server:
             # Xử lý dữ liệu euler nếu có
             if euler and len(euler) >= 3:
                 heading, pitch, roll = euler[0], euler[1], euler[2]
+
+                self.bno055_heading = heading
+
                 log_parts.extend([f"{heading:.2f}", f"{pitch:.2f}", f"{roll:.2f}"])
             else:
                 log_parts.extend(["NA", "NA", "NA"])
@@ -353,6 +359,44 @@ class Server:
                     
         except Exception as e:
             self.gui.update_monitor(f"Error processing BNO055 data: {e}")
+
+     # Add this method to the Server class in raw_server.py
+    def process_position_data(self, position_data):
+        """
+        Process position data sent directly from the robot
+        position_data should be a list [x, y, theta] or dictionary with these keys
+        """
+        try:
+            # Check if position_data is valid
+            if isinstance(position_data, list) and len(position_data) >= 3:
+                x, y, theta = position_data[0], position_data[1], position_data[2]
+            elif isinstance(position_data, dict) and all(key in position_data for key in ['x', 'y', 'theta']):
+                x = position_data['x']
+                y = position_data['y']
+                theta = position_data['theta']
+            else:
+                self.gui.update_monitor(f"Invalid position data format: {position_data}")
+                return
+                
+            # Convert to float to ensure data type compatibility
+            x = float(x)
+            y = float(y)
+            theta = float(theta)
+                
+            # Update robot position directly in the trajectory visualizer
+            from robot_position_visualizer import robot_position_visualizer
+            robot_position_visualizer.update_robot_position(x, y, theta)
+            
+            # Log data if enabled
+            self.setup_log_file("position")
+            if self.log_data and "position" in self.log_files:
+                timestamp = time.time() - self.common_start_time
+                self.log_files["position"].write(f"{timestamp:.3f} {x:.4f} {y:.4f} {theta:.4f}\n")
+                self.log_files["position"].flush()
+                
+            self.gui.update_monitor(f"Updated robot position: x={x:.2f}, y={y:.2f}, θ={theta:.2f}")
+        except Exception as e:
+            self.gui.update_monitor(f"Error processing position data: {e}")       
     # Hàm xử lý thông điệp log từ thiết bị
     def process_log_message(self, log_message):
         # Hiển thị log lên UI
@@ -396,7 +440,10 @@ class Server:
                                     
                                 elif message_type == "bno055" and "data" in json_data:
                                     self.process_bno055_data(json_data["data"])
-                                    
+
+                                elif message_type == "position" and "data" in json_data:
+                                    self.process_position_data(json_data["data"])   
+
                                 elif message_type == "log" and "message" in json_data:
                                     self.process_log_message(json_data["message"])
                                     
@@ -492,6 +539,11 @@ class Server:
         """Display the trajectory visualization window"""
         trajectory_visualizer.show()
         self.gui.update_monitor("Trajectory visualization displayed")
+
+    def show_robot_position_plot(self):
+        """Display the robot position visualization window"""
+        robot_position_visualizer.show()
+        self.gui.update_monitor("Robot position visualization displayed")
 
     def show_rpm_plot(self):
         """Display the RPM plot window"""
@@ -647,6 +699,23 @@ class ServerGUI:
                                   command=self.server.emergency_stop, style="Red.TButton")
         emerg_button.grid(row=0, column=3, padx=5, pady=5)
 
+                # Create a dedicated frame for trajectory buttons
+        trajectory_frame = ttk.LabelFrame(control_tab, text="Trajectory Visualization", padding=10)
+        trajectory_frame.pack(fill="x", pady=5)
+
+        # Add the two separate buttons 
+        ttk.Button(trajectory_frame, text="Show Server Trajectory", 
+                command=self.server.show_trajectory_plot).grid(row=0, column=0, padx=20, pady=5)
+                
+        ttk.Button(trajectory_frame, text="Show Robot Trajectory", 
+                command=self.server.show_robot_position_plot).grid(row=0, column=1, padx=20, pady=5)
+
+        # Add explanatory labels
+        ttk.Label(trajectory_frame, text="(Calculated from encoders)", 
+                font=("", 8)).grid(row=1, column=0, padx=5)
+        ttk.Label(trajectory_frame, text="(Reported by robot)", 
+                font=("", 8)).grid(row=1, column=1, padx=5)
+        
         # Tạo khung chứa cho Motor Control và BNO055
         control_container = ttk.Frame(control_tab)
         control_container.pack(fill="x", pady=5)
@@ -711,9 +780,9 @@ class ServerGUI:
         ttk.Button(pid_frame, text="Show RPM Plot", 
                 command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)
 
-        # Add new button for trajectory visualization          
-        ttk.Button(pid_frame, text="Show Trajectory", 
-                command=self.server.show_trajectory_plot).grid(row=0, column=2, padx=5, pady=5)
+        # # Add new button for trajectory visualization          
+        # ttk.Button(pid_frame, text="Show Trajectory", 
+        #         command=self.server.show_trajectory_plot).grid(row=0, column=2, padx=5, pady=5)
                 
         # Move these buttons one column to the right
         ttk.Button(pid_frame, text="Save PID Config", 
@@ -779,6 +848,8 @@ class ServerGUI:
                   
         # Initialize with a welcome message
         self.update_monitor("Server interface initialized. Ready to start.")
+
+
 
     def toggle_logging(self):
         self.server.log_data = self.log_var.get()
