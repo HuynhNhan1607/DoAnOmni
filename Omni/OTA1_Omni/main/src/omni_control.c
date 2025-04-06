@@ -12,10 +12,6 @@
 #include "LPF.h"
 #include "bno055_handler.h"
 
-#define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
-#define ROBOT_RADIUS 0.1543 // Khoảng cách từ tâm robot đến bánh xe (m)
-#define WEIGHT 2.0          // Trọng lượng robot (kg)
-
 extern PID_t pid_motor[NUM_MOTORS];
 extern LPF encoder_lpf[NUM_MOTORS];
 
@@ -119,7 +115,7 @@ void wheel_speed_calculation_task(void *pvParameters)
     {
 #if USE_THETA == 1
         float current_heading = get_heading();
-        robot.theta = -(current_heading * M_PI) / 180.0f;
+        robot.theta = (current_heading * M_PI) / 180.0f;
         ESP_LOGI(TAG, "Recalculating with heading: %.2f", current_heading);
 #endif
         // Tính toán vận tốc góc mới
@@ -131,21 +127,35 @@ void wheel_speed_calculation_task(void *pvParameters)
     }
 }
 
-void omni_control(float dot_x, float dot_y, float dot_theta)
+void set_control(float dot_x, float dot_y, float dot_theta)
 {
-
+    // Only update the velocity commands
     robot.dot_x = dot_x;
     robot.dot_y = dot_y;
     robot.dot_theta = dot_theta;
+
+#if USE_THETA == 1
+    // Update current heading
+    float current_heading = get_heading();
+    robot.theta = (current_heading * M_PI) / 180.0f;
+#endif
+
+    // Calculate and apply wheel speeds immediately for responsive control
+    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
+    apply_wheel_speeds();
+
+    ESP_LOGI(TAG, "Set control: dot_x=%.4f, dot_y=%.4f, dot_theta=%.4f",
+             dot_x, dot_y, dot_theta);
+}
+void omni_init()
+{
+    robot.dot_x = 0;
+    robot.dot_y = 0;
+    robot.dot_theta = 0;
     robot.theta = 0;
     robot.wheel_radius = WHEEL_RADIUS;
     robot.robot_radius = ROBOT_RADIUS;
-#if USE_THETA == 1
-    float current_heading = get_heading();
-    robot.theta = -(current_heading * M_PI) / 180.0f;
-#endif
     // Dùng để đáp ứng điều khiển ngay lập tức, không phải đợi task chạy
-    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
     apply_wheel_speeds();
 
     if (wheel_speed_task_handle == NULL)

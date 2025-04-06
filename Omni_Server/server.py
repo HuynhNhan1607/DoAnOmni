@@ -34,7 +34,7 @@ class Server:
         self.log_files = {}
         self.start_times = {}
         self.supported_types = ["encoder", "bno055", "log", "position"]
-    
+        
         # Tạo file log mới cho loại dữ liệu
     def setup_log_file(self, data_type):
         if not self.log_data:
@@ -52,11 +52,11 @@ class Server:
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
         session_id = time.strftime('%Y%m%d_%H%M%S', time.localtime(self.common_start_time))
-        log_filename = f"{log_dir}/{data_type}_log_{session_id}.csv"  # Đổi thành .csv
+        log_filename = f"{log_dir}/{data_type}_log_{session_id}.csv"
         
-        self.log_files[data_type] = open(log_filename, "w", newline='')  # Thêm newline=''
+        self.log_files[data_type] = open(log_filename, "w", newline='')
         
-        # Sử dụng csv writer
+        # Sử dụng csv writer cho tất cả các loại dữ liệu
         import csv
         self.log_writers = getattr(self, 'log_writers', {})
         self.log_writers[data_type] = csv.writer(self.log_files[data_type])
@@ -283,7 +283,8 @@ class Server:
         self.setup_log_file("encoder")
         if self.log_data and "encoder" in self.log_files:
             timestamp = time.time() - self.common_start_time
-            self.log_files["encoder"].write(f"{timestamp:.3f} {' '.join([str(e) for e in self.encoders])}\n")
+            self.log_writers["encoder"].writerow([f"{timestamp:.3f}", str(self.encoders[0]), 
+                                                 str(self.encoders[1]), str(self.encoders[2])])
             self.log_files["encoder"].flush()
 
     # Hàm xử lý dữ liệu BNO055
@@ -355,7 +356,24 @@ class Server:
             # Ghi log nếu được bật
             self.setup_log_file("bno055")
             if self.log_data and "bno055" in self.log_files:
-                self.log_files["bno055"].write(" ".join(log_parts) + "\n")
+                row_data = [f"{time.time() - self.common_start_time:.3f}"]
+                
+                # Thêm dữ liệu euler nếu có
+                if euler and len(euler) >= 3:
+                    row_data.extend([f"{euler[0]:.2f}", f"{euler[1]:.2f}", f"{euler[2]:.2f}"])
+                else:
+                    row_data.extend(["NA", "NA", "NA"])
+                    
+                # Thêm dữ liệu quaternion nếu có
+                if quaternion and len(quaternion) >= 4:
+                    row_data.extend([f"{quaternion[0]:.4f}", f"{quaternion[1]:.4f}", 
+                                     f"{quaternion[2]:.4f}", f"{quaternion[3]:.4f}"])
+                else:
+                    row_data.extend(["NA", "NA", "NA", "NA"])
+                
+                # Tiếp tục với các dữ liệu khác...
+                
+                self.log_writers["bno055"].writerow(row_data)
                 self.log_files["bno055"].flush()
                     
         except Exception as e:
@@ -390,7 +408,7 @@ class Server:
             self.setup_log_file("position")
             if self.log_data and "position" in self.log_files:
                 timestamp = time.time() - self.common_start_time
-                self.log_files["position"].write(f"{timestamp:.3f} {x:.4f} {y:.4f} {theta:.4f}\n")
+                self.log_writers["position"].writerow([f"{timestamp:.3f}", f"{x:.4f}", f"{y:.4f}", f"{theta:.4f}"])
                 self.log_files["position"].flush()
                 
             # self.gui.update_monitor(f"Updated robot position: x={x:.2f}, y={y:.2f}, θ={theta:.2f}")
@@ -406,7 +424,7 @@ class Server:
         self.setup_log_file("log")
         if self.log_data and "log" in self.log_files:
             timestamp = time.time() - self.common_start_time
-            self.log_files["log"].write(f"{timestamp:.3f} {log_message}\n")
+            self.log_writers["log"].writerow([f"{timestamp:.3f}", log_message])
             self.log_files["log"].flush()
 
     def receive_client_data(self, sock):
@@ -493,7 +511,26 @@ class Server:
         except Exception as e:
             print(f"Send command error: {e}")
             self.gui.update_monitor(f"Command send error: {e}")
+            
+    def send_position_goal(self, x, y, theta=0.0):
+        """Send a position goal to the robot
+        x, y, theta: coordinates and orientation in meters/radians
+        """
+        if not self.client_connected:
+            print("Not connected - can't send position goal")
+            return
+            
+        # Format the command for a position goal
+        # Using different prefix to distinguish from velocity commands
+        command = f"x:{x:.2f} y:{y:.2f}"
         
+        try:
+            self.client_socket.sendall(command.encode())
+            self.gui.update_monitor(f"Sent position goal: x={x:.2f}m, y={y:2f}m")
+        except Exception as e:
+            print(f"Send position goal error: {e}")
+            self.gui.update_monitor(f"Position goal send error: {e}")    
+            
     def set_speed(self, motor_index, speed):
         if not self.client_connected:
             self.gui.update_monitor("Not connected - can't set speed")
@@ -603,3 +640,8 @@ class Server:
             self.gui.update_monitor("PID config file not found")
         except Exception as e:
             self.gui.update_monitor(f"Error loading PID config: {e}")
+
+    def set_position_visualizer_callback(self):
+        """Set the callback for the position visualizer to send position goals"""
+        robot_position_visualizer.set_destination_callback(self.send_position_goal)
+        self.gui.update_monitor("Position visualizer destination callback configured")

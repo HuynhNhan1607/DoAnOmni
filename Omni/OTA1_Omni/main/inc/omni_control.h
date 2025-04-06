@@ -17,6 +17,8 @@ typedef struct
     float robot_radius; // Khoảng cách từ tâm robot đến bánh xe (m)
 } RobotParams;
 
-void omni_control(float v_rpm, float theta, float omega_rpm);
+void set_control(float dot_x, float dot_y, float dot_theta);
+
+void omni_init(void);
 
 #endif // OMNI_CONTROL_H

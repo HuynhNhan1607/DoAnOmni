@@ -40,19 +40,26 @@ static SemaphoreHandle_t heading_mutex = NULL;
 
 float adjusted_heading = 0.0f;
 
+EventGroupHandle_t bno055_event_group = NULL;
+
 float get_heading()
 {
+#if USE_BNO055 == 1
     float result = 0.0f;
     if (heading_mutex != NULL && xSemaphoreTake(heading_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
     {
-        result = adjusted_heading;
+        result = -adjusted_heading;
         xSemaphoreGive(heading_mutex);
     }
     else
     {
-        ESP_LOGW(TAG_IMU, "Failed to take heading mutex");
+        ESP_LOGW(TAG_IMU, "get_heading() - Failed mutex");
     }
     return result;
+#else
+    ESP_LOGW(TAG_IMU, "get_heading() - BNO055 not used");
+    return 0.0f;
+#endif
 }
 
 void blink_led_task(void *pvParameters)
@@ -100,7 +107,7 @@ void send_calibration_notification(int sock, calib_status_t status)
     char calib_json[256];
     int len = snprintf(calib_json, sizeof(calib_json),
                        "{"
-                       "\"id\":%d,"
+                       "\"id\":\"%s\","
                        "\"type\":\"bno055\","
                        "\"data\":{"
                        "\"event\":\"calibration_complete\","
@@ -344,6 +351,12 @@ void calibration_task(void *pvParameters)
     {
         send_calibration_notification(sock, calib_status);
     }
+
+    if (bno055_event_group != NULL)
+    {
+        xEventGroupSetBits(bno055_event_group, BNO055_CALIBRATED_BIT);
+        ESP_LOGI(TAG_IMU, "BNO055 calibration complete bit set");
+    }
     calib_task_handle = NULL;
     vTaskDelete(NULL);
 }
@@ -390,7 +403,7 @@ void ndof_task(void *pvParameters)
 
         snprintf(json_buffer, sizeof(json_buffer),
                  "{"
-                 "\"id\":%d,"
+                 "\"id\":\"%s\","
                  "\"type\":\"bno055\","
                  "\"data\":{"
                  "\"time\":%10d,"
@@ -426,9 +439,20 @@ void bno055_start(int *socket)
         ESP_LOGE(TAG_IMU, "Failed to initialize NVS");
     }
 
+    if (bno055_event_group == NULL)
+    {
+        bno055_event_group = xEventGroupCreate();
+        if (bno055_event_group == NULL)
+        {
+            ESP_LOGE(TAG_IMU, "Failed to create event group");
+        }
+        xEventGroupClearBits(bno055_event_group, BNO055_CALIBRATED_BIT);
+    }
+
     err = bno055_set_default_conf(&bno_conf);
     err = bno055_open(i2c_num, &bno_conf, BNO_MODE);
     ESP_LOGI(TAG_IMU, "bno055_open() returned 0x%02X", err);
+
     heading_mutex = xSemaphoreCreateMutex();
     if (err != ESP_OK)
     {

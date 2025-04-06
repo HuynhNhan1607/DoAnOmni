@@ -13,11 +13,12 @@ class ServerGUI:
         self.pid_entries = []
         self.control_gui = ControlGUI(root)
         self.control_gui.set_server(self.server)
+        
         self.setup_gui()
 
     def setup_gui(self):
         self.root.title("Omni Robot Server Control")
-        self.root.geometry("850x700")
+        self.root.geometry("850x900")
         
         # Configure styles
         style = ttk.Style()
@@ -241,6 +242,7 @@ class ServerGUI:
                   
         # Initialize with a welcome message
         self.update_monitor("Server interface initialized. Ready to start.")
+        self.server.set_position_visualizer_callback()
 
     def toggle_logging(self):
         self.server.log_data = self.log_var.get()

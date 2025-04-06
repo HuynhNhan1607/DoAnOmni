@@ -30,7 +30,7 @@ void log_to_tcp(const char *format, va_list args)
             }
             // Format thành JSON với các trường theo yêu cầu
             int json_len = snprintf(json_buffer, sizeof(json_buffer),
-                                    "{\"id\":%d,\"type\":\"log\",\"message\":\"%s\"}\n",
+                                    "{\"id\":\"%s\",\"type\":\"log\",\"message\":\"%s\"}\n",
                                     ID_ROBOT, buffer);
 
             // Gửi JSON buffer qua socket

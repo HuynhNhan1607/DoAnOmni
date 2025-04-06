@@ -3,13 +3,16 @@
 
 // Debugging
 #define LOG_SERVER 1
-
 // THETA
 #define USE_THETA 1
 #define USE_BNO055 1
+#define BNO055_CALIBRATED_BIT (1 << 0)
 
 // Robot Information
-#define ID_ROBOT 1
+#define ID_ROBOT "robot1"
+#define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
+#define ROBOT_RADIUS 0.1543 // Khoảng cách từ tâm robot đến bánh xe (m)
+#define WEIGHT 2.0          // Trọng lượng robot (kg)
 
 // #define WIFI_SSID "CEEC_Tenda"
 // #define WIFI_PASS "1denmuoi1"

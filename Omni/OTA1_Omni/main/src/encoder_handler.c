@@ -133,7 +133,7 @@ void task_send_encoder(void *pvParameters)
         // snprintf(message, sizeof(message), "1:%.2f;2:%.2f;3:%.2f\n", encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
         // snprintf(message, sizeof(message), "1:%d;2:%d;3:%d\n", encoder_count[0], encoder_count[1], encoder_count[2]);
         message_len = snprintf(message, sizeof(message),
-                               "{\"id\":%d,\"type\":\"encoder\",\"data\":[%.2f,%.2f,%.2f]}\n",
+                               "{\"id\":\"%s\",\"type\":\"encoder\",\"data\":[%.2f,%.2f,%.2f]}\n",
                                ID_ROBOT, encoder_rpm[0], encoder_rpm[1], encoder_rpm[2]);
         if (send(sock, message, strlen(message), 0) < 0)
         {

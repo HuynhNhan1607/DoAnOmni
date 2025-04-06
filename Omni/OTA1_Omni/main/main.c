@@ -24,6 +24,8 @@
 #include "sys_config.h"
 #include "LPF.h"
 #include "bno055_handler.h"
+#include "position_handler.h"
+#include "position_controller.h"
 
 #define SERVER_PORT 12346
 
@@ -33,6 +35,7 @@ static const char *TAG_PID = "PID";
 PID_t pid_motor[3];
 
 extern LPF encoder_lpf[NUM_MOTORS];
+extern EventGroupHandle_t bno055_event_group;
 
 int setup_socket()
 {
@@ -66,6 +69,8 @@ void task_socket(void *pvParameters)
 
     float dot_x, dot_y, dot_theta = 0;
 
+    float pos_x, pos_y = 0;
+
     int motor_id, motor_speed = 0;
 
     float Kp, Ki, Kd = 0;
@@ -93,12 +98,18 @@ void task_socket(void *pvParameters)
             else if (strcmp(rx_buffer, "Set PID") == 0)
             {
                 xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
+                start_position_controller();
             }
 #endif
             // Manual Control
             else if (sscanf(rx_buffer, "dot_x:%f dot_y:%f dot_theta:%f", &dot_x, &dot_y, &dot_theta) == 3)
             {
-                omni_control(dot_x, dot_y, dot_theta);
+                set_control(dot_x, dot_y, dot_theta);
+            }
+
+            else if (sscanf(rx_buffer, "x:%f y:%f", &pos_x, &pos_y) == 2)
+            {
+                set_target_position(pos_x, pos_y);
             }
 
             // Motor Set Speed
@@ -125,7 +136,7 @@ void task_socket(void *pvParameters)
             }
             else
             {
-                ESP_LOGI(TAG_Socket, "Invalid command");
+                ESP_LOGW(TAG_Socket, "Invalid command: %s", rx_buffer);
             }
         }
         vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -134,10 +145,38 @@ void task_socket(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+void register_robot(int socket)
+{
+    char msg[64];
+    snprintf(msg, sizeof(msg), "{\"type\":\"registration\",\"robot_id\":\"%s\"}\n", ID_ROBOT);
+    int sent = send(socket, msg, strlen(msg), 0);
+    ESP_LOGI(TAG_Socket, "Registration sent: %s", msg);
+}
+
+void waitBNO055Calibration()
+{
+    if (bno055_event_group != NULL)
+    {
+        ESP_LOGI("Waiting BNO055", "Waiting for BNO055 calibration to complete...");
+        EventBits_t bits = xEventGroupWaitBits(
+            bno055_event_group,    // Event group handle
+            BNO055_CALIBRATED_BIT, // Bits to wait for
+            pdFALSE,               // Don't clear bits on exit
+            pdTRUE,                // Wait for all bits
+            portMAX_DELAY);        // Wait indefinitely
+
+        if (bits & BNO055_CALIBRATED_BIT)
+        {
+            ESP_LOGI("Waiting BNO055", "BNO055 calibration complete, starting forward kinematics");
+        }
+    }
+}
+
 void app_main()
 {
     connect_to_wifi();
     int socket = setup_socket();
+    register_robot(socket);
 #if LOG_SERVER == 1
     log_init(socket);
 #endif
@@ -146,7 +185,11 @@ void app_main()
     setup_pwm();
     xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
+
 #if USE_BNO055 == 1
     bno055_start(&socket);
+    waitBNO055Calibration();
 #endif
+    omni_init();
+    start_forward_kinematics(&socket);
 }
