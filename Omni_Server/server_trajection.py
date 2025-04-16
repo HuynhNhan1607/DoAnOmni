@@ -40,34 +40,7 @@ class TrajectoryVisualizer:
         # Cài đặt thời gian cập nhật đồ thị (miliseconds)
         self.update_interval = 50  # ms - Giảm xuống để cập nhật nhanh hơn
         self.last_plot_update = 0
-        
-        # Khởi tạo file log
-        self.initialize_log_file()
 
-    def initialize_log_file(self):
-        """Khởi tạo file log để lưu kết quả động học"""
-        import csv
-        import os
-        from datetime import datetime
-        
-        log_dir = "kinematics_logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = open(f"{log_dir}/kinematics_log_{timestamp}.csv", 'w', newline='')
-        self.log_writer = csv.writer(self.log_file)
-        
-        # Ghi tiêu đề
-        self.log_writer.writerow([
-            'Timestamp',
-            'RPM1', 'RPM2', 'RPM3',
-            'Theta_For_Kinematics_Rad', 'Theta_For_Kinematics_Deg',
-            'Velocity_X', 'Velocity_Y', 'Angular_Velocity',
-            'Position_X', 'Position_Y', 'Theta_Rad', 'Theta_Deg',
-            'Delta_Time'
-        ])
-        
     def initialize_plot(self):
         """Initialize the trajectory visualization window"""
         if self.trajectory_window is not None:
@@ -118,48 +91,6 @@ class TrajectoryVisualizer:
         button_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
         ttk.Button(button_frame, text="Close", command=self.close).pack(side=tk.RIGHT, padx=5, pady=5)
-        
-        # Vẽ robot ban đầu
-        robot_body_radius = self.robot_radius
-        
-        # Vẽ thân robot (hình tròn) tại vị trí (0,0)
-        robot_body = plt.Circle((0, 0), robot_body_radius, fill=False, color='r', linewidth=1.5)
-        self.ax.add_patch(robot_body)
-        
-        # Vẽ trục tọa độ body frame
-        arrow_length = robot_body_radius * 1.2
-        # Trục x - màu đỏ
-        self.ax.arrow(0, 0, arrow_length, 0,
-                    head_width=0.05, head_length=0.07, fc='r', ec='r', linewidth=1.5)
-        # Trục y - màu xanh lá
-        self.ax.arrow(0, 0, 0, arrow_length,
-                    head_width=0.05, head_length=0.07, fc='g', ec='g', linewidth=1.5)
-        
-        # Chỉ hiển thị label cho bánh xe
-        wheel_angles = [0, 2*np.pi/3, 4*np.pi/3]  # 0°, 120°, 240°
-        
-        for i, angle in enumerate(wheel_angles):
-            # Tính vị trí của bánh xe trên đường tròn thân robot
-            wheel_x = self.robot_radius * np.cos(angle)
-            wheel_y = self.robot_radius * np.sin(angle)
-            
-            # Đánh số bánh xe
-            label_offset = 0.03
-            label_x = wheel_x + label_offset * np.cos(angle)
-            label_y = wheel_y + label_offset * np.sin(angle)
-            self.ax.text(label_x, label_y, str(i+1), fontsize=8, 
-                        ha='center', va='center', color='black', 
-                        bbox=dict(facecolor='white', alpha=0.7, boxstyle='circle'))
-        
-        # Thêm chú thích
-        self.ax.text(1.2*robot_body_radius, 0, 
-                    f'x: 0.00m\ny: 0.00m\nθ: 0.0°', 
-                    fontsize=9, bbox=dict(facecolor='white', alpha=0.7))
-        
-        # Đảm bảo vẽ lại với giới hạn đã định
-        self.ax.set_xlim(self.PLOT_X_MIN, self.PLOT_X_MAX)
-        self.ax.set_ylim(self.PLOT_Y_MIN, self.PLOT_Y_MAX)
-        self.canvas.draw()
         
         self.is_active = True
         self.last_update_time = time.time()
@@ -235,33 +166,6 @@ class TrajectoryVisualizer:
         
         # Chuẩn hóa theta về khoảng -pi đến pi
         self.theta = self.normalize_angle(self.theta)
-        
-        if self.log_writer:
-            # Định dạng thời gian dễ đọc
-            time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(current_time))
-            time_ms = int((current_time % 1) * 1000)
-            timestamp_str = f"{time_str}.{time_ms:03d}"
-            
-            self.log_writer.writerow([
-                # Thời gian
-                timestamp_str,
-                
-                # RPM đầu vào (luôn là số)
-                rpm_values[0], rpm_values[1], rpm_values[2],
-                
-                # Thông tin góc được sử dụng (luôn là số)
-                self.theta, np.degrees(self.theta),
-                
-                # Kết quả tính toán vận tốc (luôn là số)
-                vx_global, vy_global, omega,
-                
-                # Vị trí sau khi tích phân (luôn là số)
-                self.x, self.y, self.theta, np.degrees(self.theta),
-                
-                # Khoảng thời gian
-                dt
-            ])
-            self.log_file.flush()
         
         # Thêm điểm vào quỹ đạo
         with self.lock:

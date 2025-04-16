@@ -172,9 +172,10 @@ class ServerGUI:
         pid_frame = ttk.LabelFrame(control_tab, text="PID Control", padding=10)
         pid_frame.pack(fill="x", pady=5)
         
-        # Buttons for PID control
-        ttk.Button(pid_frame, text="Start PID", 
-                command=self.server.send_set_pid).grid(row=0, column=0, padx=5, pady=5)
+        tk.Button(pid_frame, text="Start Robot", 
+                command=self.server.send_set_pid, 
+                bg="#2196F3", fg="white",
+                padx=5, pady=2).grid(row=0, column=0, padx=5, pady=5)
                 
         ttk.Button(pid_frame, text="Show RPM Plot", 
                 command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)

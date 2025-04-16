@@ -10,6 +10,8 @@ void reinit_sensor(void *pvParameters);
 
 float get_heading();
 
+void get_accel(float *accel_x, float *accel_y, float *accel_z);
+
 void bno055_start(int *socket);
 
 #endif // BNO055_HANDLER_H

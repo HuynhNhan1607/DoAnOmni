@@ -23,7 +23,7 @@ TaskHandle_t calib_task_handle = NULL;
 
 bno055_euler_t euler;
 bno055_quaternion_t quat;
-bno055_vec3_t lin_accel;
+bno055_vec3_t lin_accel = {0.0f, 0.0f, 0.0f};
 bno055_vec3_t gravity;
 
 static bno055_config_t bno_conf;
@@ -60,6 +60,15 @@ float get_heading()
     ESP_LOGW(TAG_IMU, "get_heading() - BNO055 not used");
     return 0.0f;
 #endif
+}
+
+// Add this function after get_heading()
+
+void get_accel(float *accel_x, float *accel_y, float *accel_z)
+{
+    *accel_x = -lin_accel.x;
+    *accel_y = -lin_accel.y; // Ma trận xoay 180 độ
+    *accel_z = lin_accel.z;
 }
 
 void blink_led_task(void *pvParameters)
@@ -386,6 +395,15 @@ void ndof_task(void *pvParameters)
             continue;
         }
 
+        err = bno055_get_lin_accel(i2c_num, &lin_accel);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG_IMU, "bno055_get_lin_accel() returned error: %02x", err);
+            handle_sensor_error(i2c_num, err);
+            taskYIELD();
+            continue;
+        }
+
         // err = bno055_quaternion_to_euler(&quat, &euler);
         // if (err != ESP_OK)
         // {
@@ -408,12 +426,14 @@ void ndof_task(void *pvParameters)
                  "\"data\":{"
                  "\"time\":%10d,"
                  "\"euler\":[%.4f,%.4f,%.4f],"
-                 "\"quaternion\":[%.4f,%.4f,%.4f,%.4f]"
+                 "\"quaternion\":[%.4f,%.4f,%.4f,%.4f],"
+                 "\"lin_accel\":[%.4f,%.4f,%.4f]"
                  "}"
                  "}\n",
                  ID_ROBOT, time_bno,
                  adjusted_heading, euler.pitch, euler.roll,
-                 quat.w, quat.x, quat.y, quat.z);
+                 quat.w, quat.x, quat.y, quat.z,
+                 lin_accel.x, lin_accel.y, lin_accel.z);
 
         if (send(sock, json_buffer, strlen(json_buffer), 0) < 0)
         {

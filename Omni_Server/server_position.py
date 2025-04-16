@@ -47,7 +47,8 @@ class RobotPositionVisualizer:
         
         # Destination point
         self.destination = None
-        
+        # Origin position configuration (True = origin at bottom, False = origin at top)
+        self.origin_at_bottom = False
         # Conversion ratio from grid cells to meters
         self.cell_to_meter = NEW_CELL  # Default: 1 cell = 1cm
         
@@ -56,6 +57,9 @@ class RobotPositionVisualizer:
         
         # Destination callback
         self.send_destination_callback = None
+
+        # Display filtered data by default
+        self.show_filtered = True
         
     def initialize_plot(self):
         """Initialize window displaying robot position"""
@@ -95,6 +99,12 @@ class RobotPositionVisualizer:
         filler = ttk.Frame(control_frame)
         filler.pack(fill=tk.BOTH, expand=True)
         
+        filter_button = ttk.Button(
+            control_frame, 
+            text="Switch Raw/Filtered", 
+            command=self.toggle_filter_view
+        )
+        filter_button.pack(fill=tk.X, padx=10, pady=5)
         # Add control panel to main panel
         main_panel.add(control_frame, weight=1)
         
@@ -285,7 +295,9 @@ class RobotPositionVisualizer:
             # Draw grid
             if self.grid is not None:
                 # Draw map - origin='upper' for correct coordinate direction
-                self.ax.imshow(self.grid, cmap='binary', origin='upper',
+                origin_setting = 'lower' if self.origin_at_bottom else 'upper'
+
+                self.ax.imshow(self.grid, cmap='binary', origin=origin_setting,
                               extent=[0, self.grid_width, 0, self.grid_height])
                 
                 # Draw grid lines
@@ -387,7 +399,14 @@ class RobotPositionVisualizer:
             self.ax.text(wheel_x, wheel_y, str(i+1), fontsize=8, 
                         ha='center', va='center', color='black', 
                         bbox=dict(facecolor='white', alpha=0.7, boxstyle='circle'))
-    
+
+    def toggle_filter_view(self):
+        """Toggle between raw and filtered position data"""
+        self.show_filtered = not self.show_filtered
+        if self.show_filtered:
+            messagebox.showinfo("View Changed", "Now showing filtered (EKF) position data")
+        else:
+            messagebox.showinfo("View Changed", "Now showing raw position data")
     def show(self):
         """Show position window"""
         if not self.is_active or not self.position_window:

@@ -37,6 +37,10 @@ PID_t pid_motor[3];
 extern LPF encoder_lpf[NUM_MOTORS];
 extern EventGroupHandle_t bno055_event_group;
 
+// Add near the top with other global variables
+static EventGroupHandle_t registration_event_group;
+#define REGISTRATION_RESPONSE_BIT BIT5 // Define bit for registration response
+
 int setup_socket()
 {
     struct sockaddr_in dest_addr;
@@ -83,7 +87,7 @@ void task_socket(void *pvParameters)
         if (len > 0)
         {
             rx_buffer[len] = '\0';
-            ESP_LOGI(TAG_Socket, "Received: %s", rx_buffer);
+            ESP_LOGW(TAG_Socket, "Received: %s", rx_buffer);
             // Switch to Upgrade Mode
             if (strcmp(rx_buffer, "Upgrade") == 0)
             {
@@ -94,10 +98,15 @@ void task_socket(void *pvParameters)
                 esp_ota_set_boot_partition(update_partition);
                 esp_restart();
             }
+            else if (strcmp(rx_buffer, "registration_response\n") == 0)
+            {
+                ESP_LOGI(TAG_Socket, "Registration response received from server");
+                xEventGroupSetBits(registration_event_group, REGISTRATION_RESPONSE_BIT);
+            }
 #if NON_PID == 0
             else if (strcmp(rx_buffer, "Set PID") == 0)
             {
-                xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
+                omni_init();
                 start_position_controller();
             }
 #endif
@@ -121,7 +130,8 @@ void task_socket(void *pvParameters)
                 ESP_LOGW(TAG_PID, "Updated Motor %d speed to %d with direction %d", motor_id, abs((int)(motor_speed * 5.11)), motor_speed > 0 ? 1 : 0);
 #else
                 // Tính toán tốc độ RPM từ tốc độ PWM
-                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
+                // LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
+                LPF_Clear(&encoder_lpf[motor_id - 1], 0);
                 pid_set_setpoint(&pid_motor[motor_id - 1], motor_speed);
                 printf("Updated Motor %d speed to %d\n", motor_id, motor_speed);
 #endif
@@ -172,24 +182,51 @@ void waitBNO055Calibration()
     }
 }
 
+void waitRegistrationResponse()
+{
+    if (registration_event_group != NULL)
+    {
+        ESP_LOGI(TAG_Socket, "Waiting for server registration response...");
+        EventBits_t bits = xEventGroupWaitBits(
+            registration_event_group,  // Event group handle
+            REGISTRATION_RESPONSE_BIT, // Bits to wait for
+            pdFALSE,                   // Don't clear bits on exit
+            pdTRUE,                    // Wait for all bits
+            portMAX_DELAY);            // Wait indefinitely
+
+        if (bits & REGISTRATION_RESPONSE_BIT)
+        {
+            ESP_LOGI(TAG_Socket, "Registration with server complete");
+        }
+    }
+}
+
 void app_main()
 {
+    registration_event_group = xEventGroupCreate();
     connect_to_wifi();
     int socket = setup_socket();
     register_robot(socket);
+    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
+    waitRegistrationResponse();
 #if LOG_SERVER == 1
     log_init(socket);
 #endif
     ESP_LOGI(TAG_Socket, "Starting application");
     setup_encoders();
     setup_pwm();
-    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
+
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
+
+#if NON_PID == 0
+    xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
+#else
+    omni_init(); // Vốn không có
+#endif
 
 #if USE_BNO055 == 1
     bno055_start(&socket);
     waitBNO055Calibration();
 #endif
-    omni_init();
-    start_forward_kinematics(&socket);
+    // start_forward_kinematics(&socket);
 }
