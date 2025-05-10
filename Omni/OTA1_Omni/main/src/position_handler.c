@@ -154,8 +154,8 @@ void forward_kinematics_task(void *pvParameters)
 
         previous_time = current_time;
 
-        ESP_LOGI(TAG_POS, "Velocities: vx=%.4f, vy=%.4f", vx, vy);
-        ESP_LOGI(TAG_POS, "Position: x=%.4f, y=%.4f, theta=%.4f",
+        ESP_LOGD(TAG_POS, "Velocities: vx=%.4f, vy=%.4f", vx, vy);
+        ESP_LOGD(TAG_POS, "Position: x=%.4f, y=%.4f, theta=%.4f",
                  robot_position.pos_x, robot_position.pos_y, robot_position.pos_theta);
 
         if (sock >= 0)

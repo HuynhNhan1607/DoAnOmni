@@ -13,13 +13,13 @@
 #include "driver/gpio.h"
 #include "log_handler.h"
 
-// #define WIFI_SSID "A10.14"
-// #define WIFI_PASS "MMNT2004"
-// #define SERVER_IP "192.168.1.241"
+#define WIFI_SSID "A10.14"
+#define WIFI_PASS "MMNT2004"
+#define SERVER_IP "192.168.1.241"
 
-#define WIFI_SSID "S20 FE"
-#define WIFI_PASS "25102004"
-#define SERVER_IP "192.168.182.85"
+// #define WIFI_SSID "S20 FE"
+// #define WIFI_PASS "25102004"
+// #define SERVER_IP "192.168.182.85"
 
 // #define WIFI_SSID "CEEC_Tenda"
 // #define WIFI_PASS "1denmuoi1"

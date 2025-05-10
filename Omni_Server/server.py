@@ -404,7 +404,7 @@ class Server:
                 if "position" in position_data and len(position_data["position"]) >= 3:
                     x = float(position_data["position"][0])
                     y = float(position_data["position"][1])
-                    theta = float(position_data["position"][2]) * np.pi / 180.0  # Convert to radians
+                    theta = float(position_data["position"][2]) 
                 else:
                     self.gui.update_monitor(f"Invalid position data format: {position_data}")
                     return
@@ -581,11 +581,12 @@ class Server:
 
     def send_command(self, dot_x, dot_y, dot_theta):
         # Gửi lệnh điều khiển đến client
+        stop_time = 20;
         if not self.client_connected:
             print("Not connected - can't send command")
             return
             
-        command = f"dot_x:{dot_x:.4f} dot_y:{dot_y:.4f} dot_theta:{dot_theta:.4f}"
+        command = f"dot_x:{dot_x:.4f} dot_y:{dot_y:.4f} dot_theta:{dot_theta:.4f} stop_time:{stop_time}"
         
         try:
             self.client_socket.sendall(command.encode())

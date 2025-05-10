@@ -32,20 +32,30 @@ float rad_s_to_rpm(float rad_s)
     return (rad_s * 60) / (2 * M_PI);
 }
 
+/*
+
+*/
 void calculate_wheel_speeds(RobotParams *params, float *omega1, float *omega2, float *omega3)
 {
-    // ESP_LOGI(TAG, "Body frame: X_dot_b=%.4f, Y_dot_b=%.4f", X_dot_b, Y_dot_b);
-    ESP_LOGI(TAG, "Recalculating with heading: (%.4f rad)", params->theta);
-    // Ma trận H^-1
+    float sin_theta = sin(params->theta);
+    float cos_theta = cos(params->theta);
+
+#if IDEAL == 1
     float H_inv[3][3] = {
-        {-sin(params->theta), cos(params->theta), params->robot_radius},
-        {-sin(M_PI / 3 - params->theta), -cos(M_PI / 3 - params->theta), params->robot_radius},
-        {sin(M_PI / 3 + params->theta), -cos(M_PI / 3 + params->theta), params->robot_radius}};
+        {-sin_theta, cos_theta, L1},
+        {0.5 * sin_theta - 0.866025 * cos_theta, -0.866025 * sin_theta - 0.5 * cos_theta, L2},
+        {0.5 * sin_theta + 0.866025 * cos_theta, 0.866025 * sin_theta - 0.5 * cos_theta, L3}};
+#else
+    float H_inv[3][3] = {
+        {-sin_theta - 0.0032 * cos_theta, -0.0032 * sin_theta + cos_theta, L1},
+        {0.465769 * sin_theta - 0.884906 * cos_theta, -0.884906 * sin_theta - 0.465769 * cos_theta, L2},
+        {0.58224 * sin_theta + 0.813012 * cos_theta, 0.813012 * sin_theta - 0.58224 * cos_theta, L3}};
+#endif
 
     // Tính toán vận tốc góc
-    *omega1 = (H_inv[0][0] * params->dot_x + H_inv[0][1] * params->dot_y + H_inv[0][2] * params->dot_theta) / params->wheel_radius;
-    *omega2 = (H_inv[1][0] * params->dot_x + H_inv[1][1] * params->dot_y + H_inv[1][2] * params->dot_theta) / params->wheel_radius;
-    *omega3 = (H_inv[2][0] * params->dot_x + H_inv[2][1] * params->dot_y + H_inv[2][2] * params->dot_theta) / params->wheel_radius;
+    *omega1 = (H_inv[0][0] * params->dot_x + H_inv[0][1] * params->dot_y + H_inv[0][2] * params->dot_theta) / r1;
+    *omega2 = (H_inv[1][0] * params->dot_x + H_inv[1][1] * params->dot_y + H_inv[1][2] * params->dot_theta) / r2;
+    *omega3 = (H_inv[2][0] * params->dot_x + H_inv[2][1] * params->dot_y + H_inv[2][2] * params->dot_theta) / r3;
 
     ESP_LOGI(TAG, "Omega: %.2f, %.2f, %.2f rad/s", *omega1, *omega2, *omega3);
 }
@@ -62,7 +72,7 @@ void apply_wheel_speeds(void)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
 
-        LPF_Clear(&encoder_lpf[i], rpm[i]);
+        LPF_Clear(&encoder_lpf[i], 0);
         pulse[i] = rpm_to_pulse(rpm[i]);
 
         // Xác định hướng động cơ

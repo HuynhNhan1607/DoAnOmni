@@ -41,6 +41,44 @@ extern EventGroupHandle_t bno055_event_group;
 static EventGroupHandle_t registration_event_group;
 #define REGISTRATION_RESPONSE_BIT BIT5 // Define bit for registration response
 
+#if CALIBRATION_KINEMATICS == 1 /*----------------------------------------------------*/
+
+#include "esp_timer.h"
+
+static esp_timer_handle_t auto_stop_timer = NULL;
+
+static void auto_stop_timer_callback(void *arg)
+{
+    ESP_LOGW("Stop_Timer", "Auto-stop timer expired, stopping robot");
+    set_control(0.0f, 0.0f, 0.0f);
+    set_control_velocity(0.0f, 0.0f);
+
+    auto_stop_timer = NULL;
+}
+
+void start_auto_stop_timer(int seconds)
+{
+    if (auto_stop_timer != NULL)
+    {
+        esp_timer_stop(auto_stop_timer);
+        esp_timer_delete(auto_stop_timer);
+        auto_stop_timer = NULL;
+    }
+
+    esp_timer_create_args_t timer_config = {
+        .callback = &auto_stop_timer_callback,
+        .name = "auto_stop"};
+
+    ESP_ERROR_CHECK(esp_timer_create(&timer_config, &auto_stop_timer));
+
+    uint64_t timeout_us = (uint64_t)seconds * 1000000; // Chuyển giây thành microseconds
+    ESP_ERROR_CHECK(esp_timer_start_once(auto_stop_timer, timeout_us));
+
+    ESP_LOGW("Stop_Timer", "Auto-stop timer started: %d seconds (precise timing)", seconds);
+}
+#endif
+
+/*--------------------------------------------------------------------------------------*/
 int setup_socket()
 {
     struct sockaddr_in dest_addr;
@@ -72,6 +110,7 @@ void task_socket(void *pvParameters)
     int socket = *(int *)pvParameters;
 
     float dot_x, dot_y, dot_theta = 0;
+    int stop_time = 0;
 
     float pos_x, pos_y = 0;
 
@@ -98,7 +137,7 @@ void task_socket(void *pvParameters)
                 esp_ota_set_boot_partition(update_partition);
                 esp_restart();
             }
-            else if (strcmp(rx_buffer, "registration_response\n") == 0)
+            else if (strcmp(rx_buffer, "registration_response") == 0)
             {
                 ESP_LOGI(TAG_Socket, "Registration response received from server");
                 xEventGroupSetBits(registration_event_group, REGISTRATION_RESPONSE_BIT);
@@ -107,13 +146,16 @@ void task_socket(void *pvParameters)
             else if (strcmp(rx_buffer, "Set PID") == 0)
             {
                 omni_init();
-                start_position_controller();
+                // start_position_controller();
             }
 #endif
             // Manual Control
-            else if (sscanf(rx_buffer, "dot_x:%f dot_y:%f dot_theta:%f", &dot_x, &dot_y, &dot_theta) == 3)
+            else if (sscanf(rx_buffer, "dot_x:%f dot_y:%f dot_theta:%f stop_time:%d", &dot_x, &dot_y, &dot_theta, &stop_time) == 4)
             {
                 set_control(dot_x, dot_y, dot_theta);
+#if CALIBRATION_KINEMATICS == 1
+                start_auto_stop_timer(stop_time);
+#endif
             }
 
             else if (sscanf(rx_buffer, "x:%f y:%f", &pos_x, &pos_y) == 2)
@@ -126,7 +168,7 @@ void task_socket(void *pvParameters)
             {
 #if NON_PID == 1
                 set_motor_speed(motor_id, motor_speed > 0 ? 1 : 0, abs((int)(motor_speed * 5.11)));
-                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed);
+                LPF_Clear(&encoder_lpf[motor_id - 1], 0);
                 ESP_LOGW(TAG_PID, "Updated Motor %d speed to %d with direction %d", motor_id, abs((int)(motor_speed * 5.11)), motor_speed > 0 ? 1 : 0);
 #else
                 // Tính toán tốc độ RPM từ tốc độ PWM
@@ -228,5 +270,5 @@ void app_main()
     bno055_start(&socket);
     waitBNO055Calibration();
 #endif
-    // start_forward_kinematics(&socket);
+    start_forward_kinematics(&socket);
 }

@@ -3,9 +3,9 @@
 
 typedef struct RobotPos_t
 {
-    float pos_x;     // Tọa độ x của robot (mét)
-    float pos_y;     // Tọa độ y của robot (mét)
-    float pos_theta; // Góc quay của robot (radian)
+    float pos_x;
+    float pos_y;
+    float pos_theta;
 } RobotPos_t;
 
 typedef struct RobotVel_t
