@@ -15,9 +15,9 @@ def butter_lowpass(cutoff_freq, sampling_freq, order=5):
     return b, a
 
 # Thông số
-sampling_freq = 100     # Tần số lấy mẫu (Hz)
-cutoff_freq = 10      # Tần số cắt (Hz)
-order = 2              # Bậc của bộ lọc
+sampling_freq = 20     # Tần số lấy mẫu (Hz)
+cutoff_freq = 0.8      # Tần số cắt (Hz)
+order = 1              # Bậc của bộ lọc
 
 time = np.linspace(0, 1, sampling_freq, endpoint=False)  # Trục thời gian
 # Tạo bộ lọc

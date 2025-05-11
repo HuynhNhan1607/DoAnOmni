@@ -168,12 +168,12 @@ void task_socket(void *pvParameters)
             {
 #if NON_PID == 1
                 set_motor_speed(motor_id, motor_speed > 0 ? 1 : 0, abs((int)(motor_speed * 5.11)));
-                LPF_Clear(&encoder_lpf[motor_id - 1], 0);
+                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 ESP_LOGW(TAG_PID, "Updated Motor %d speed to %d with direction %d", motor_id, abs((int)(motor_speed * 5.11)), motor_speed > 0 ? 1 : 0);
 #else
                 // Tính toán tốc độ RPM từ tốc độ PWM
                 // LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
-                LPF_Clear(&encoder_lpf[motor_id - 1], 0);
+                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 pid_set_setpoint(&pid_motor[motor_id - 1], motor_speed);
                 printf("Updated Motor %d speed to %d\n", motor_id, motor_speed);
 #endif
@@ -263,7 +263,7 @@ void app_main()
 #if NON_PID == 0
     xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
 #else
-    omni_init(); // Vốn không có
+    // omni_init(); // Vốn không có
 #endif
 
 #if USE_BNO055 == 1

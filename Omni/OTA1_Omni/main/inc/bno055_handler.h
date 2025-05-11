@@ -5,7 +5,6 @@
 #include "freertos/event_groups.h"
 
 // Event bits
-#define BNO055_CALIBRATED_BIT BIT0
 #define BNO055_DATA_RECEIVED_BIT BIT1
 
 // Event group handle

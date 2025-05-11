@@ -74,10 +74,10 @@ void setup_encoders()
     setup_pcnt_encoder(0, ENCODER_1_A, ENCODER_1_B);
     setup_pcnt_encoder(1, ENCODER_2_A, ENCODER_2_B);
     setup_pcnt_encoder(2, ENCODER_3_A, ENCODER_3_B);
-    ESP_LOGI(TAG, "Setting up Kalman Filter");
-    Kalman_Init(&encoder_kalman[0], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
-    Kalman_Init(&encoder_kalman[1], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
-    Kalman_Init(&encoder_kalman[2], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    // ESP_LOGI(TAG, "Setting up Kalman Filter");
+    // Kalman_Init(&encoder_kalman[0], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    // Kalman_Init(&encoder_kalman[1], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
+    // Kalman_Init(&encoder_kalman[2], 0.4, 5.0, 0.0); // (Q, R, Giá trị ban đầu)
     ESP_LOGI(TAG, "Setting up Low Pass Filter");
     LPF_Init(&encoder_lpf[0], a_coeffs_enc, b_coeffs_enc, TIME_INTERVAL);
     LPF_Init(&encoder_lpf[1], a_coeffs_enc, b_coeffs_enc, TIME_INTERVAL);

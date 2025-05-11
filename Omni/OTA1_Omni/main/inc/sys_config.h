@@ -6,8 +6,13 @@
 // THETA
 #define USE_THETA 1
 #define USE_BNO055 1
-#define CALIBRATION_KINEMATICS 0
+
 #define BNO055_CALIBRATED_BIT (1 << 0)
+
+/*-------------------------------------------*/
+#define USE_FUZZY_PID 1
+#define CALIBRATION_KINEMATICS 0
+/*-------------------------------------------*/
 
 // Robot Information
 #define ID_ROBOT "robot1"

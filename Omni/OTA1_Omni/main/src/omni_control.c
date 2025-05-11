@@ -57,7 +57,7 @@ void calculate_wheel_speeds(RobotParams *params, float *omega1, float *omega2, f
     *omega2 = (H_inv[1][0] * params->dot_x + H_inv[1][1] * params->dot_y + H_inv[1][2] * params->dot_theta) / r2;
     *omega3 = (H_inv[2][0] * params->dot_x + H_inv[2][1] * params->dot_y + H_inv[2][2] * params->dot_theta) / r3;
 
-    ESP_LOGI(TAG, "Omega: %.2f, %.2f, %.2f rad/s", *omega1, *omega2, *omega3);
+    ESP_LOGD(TAG, "Omega: %.2f, %.2f, %.2f rad/s", *omega1, *omega2, *omega3);
 }
 
 void apply_wheel_speeds(void)
@@ -72,7 +72,7 @@ void apply_wheel_speeds(void)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
 
-        LPF_Clear(&encoder_lpf[i], 0);
+        LPF_Clear(&encoder_lpf[i], rpm[i]);
         pulse[i] = rpm_to_pulse(rpm[i]);
 
         // Xác định hướng động cơ
@@ -95,8 +95,8 @@ void apply_wheel_speeds(void)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
-        // LPF_Clear(&encoder_lpf[i], rpm[i]);
-        LPF_Clear(&encoder_lpf[i], 0);
+        LPF_Clear(&encoder_lpf[i], rpm[i]);
+        // LPF_Clear(&encoder_lpf[i], 0);
         pid_set_setpoint(&pid_motor[i], rpm[i]);
     }
 #endif
@@ -115,7 +115,7 @@ void wheel_speed_calculation_task(void *pvParameters)
 #if USE_THETA == 1
         float current_heading = get_heading();
         robot.theta = (current_heading * M_PI) / 180.0f;
-        ESP_LOGI(TAG, "Recalculating with heading: %.2f", current_heading);
+        ESP_LOGD(TAG, "Recalculating with heading: %.2f", current_heading);
 #endif
         // Tính toán vận tốc góc mới
         calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
@@ -138,7 +138,7 @@ void set_control(float dot_x, float dot_y, float dot_theta)
     float current_heading = get_heading();
     robot.theta = (current_heading * M_PI) / 180.0f;
 #endif
-    ESP_LOGI(TAG, "Set control: dot_x=%.4f, dot_y=%.4f, dot_theta=%.4f",
+    ESP_LOGD(TAG, "Set control: dot_x=%.4f, dot_y=%.4f, dot_theta=%.4f",
              dot_x, dot_y, dot_theta);
     // Calculate and apply wheel speeds immediately for responsive control
     calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
@@ -164,7 +164,7 @@ void omni_init()
                     8,    // Priority
                     &wheel_speed_task_handle);
 
-        ESP_LOGI(TAG, "Wheel speed calculation task started");
+        ESP_LOGD(TAG, "Wheel speed calculation task started");
     }
 #endif
 }

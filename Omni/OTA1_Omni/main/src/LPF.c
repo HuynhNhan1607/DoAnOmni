@@ -12,6 +12,7 @@ void LPF_Init(LPF *filter, float *a, float *b, float time_interval)
     filter->time_interval = time_interval;
 }
 
+#define Motor_Respone_In_50ms 1.0f // 30% so với Setpoint mỗi 50ms
 void LPF_Clear(LPF *filter, float rpm)
 {
     // memset(filter->x_prev, rpm, sizeof(filter->x_prev));
@@ -20,28 +21,22 @@ void LPF_Clear(LPF *filter, float rpm)
 
     /*-----------------*/
 
-    // filter->x_prev = rpm;
-    // filter->y_prev = rpm;
+    // filter->x_prev += Motor_Respone_In_50ms * rpm;
+    // filter->y_prev += Motor_Respone_In_50ms * rpm;
+
     return;
 }
 
 // Hàm áp dụng bộ lọc
 float LPF_Apply(LPF *filter, float x)
 {
-    // float y = filter->b_coeffs[0] * x +
-    //           filter->b_coeffs[1] * filter->x_prev[0] +
-    //           filter->b_coeffs[2] * filter->x_prev[1] +
-    //           filter->a_coeffs[0] * filter->y_prev[0] +
-    //           filter->a_coeffs[1] * filter->y_prev[1];
 
     float y = filter->b_coeffs[0] * x +
               filter->b_coeffs[1] * filter->x_prev +
               filter->a_coeffs[0] * filter->y_prev;
-    // Cập nhật bộ nhớ
-    // filter->x_prev[1] = filter->x_prev[0];
+
     filter->x_prev = x;
 
-    // filter->y_prev[1] = filter->y_prev;
     filter->y_prev = y;
 
     return y;
