@@ -9,3 +9,5 @@ ota_0,      app,  ota_0,    0x10000,  0xD0000,
 ota_1,      app,  ota_1,    0xE0000,  0x2A0000,
 
     
+
+    

@@ -249,7 +249,7 @@ void app_main()
     connect_to_wifi();
     int socket = setup_socket();
     register_robot(socket);
-    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
+    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 7, NULL);
     waitRegistrationResponse();
 #if LOG_SERVER == 1
     log_init(socket);
@@ -261,7 +261,7 @@ void app_main()
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
 
 #if NON_PID == 0
-    xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
+    xTaskCreate(pid_task, "pid_task", 4096, (void *)&socket, 8, NULL);
 #else
     // omni_init(); // Vốn không có
 #endif

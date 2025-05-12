@@ -36,7 +36,7 @@ class Server:
                 # Khởi tạo dictionary để quản lý file log
         self.log_files = {}
         self.start_times = {}
-        self.supported_types = ["encoder", "bno055", "log", "position"]
+        self.supported_types = ["encoder", "bno055", "log", "position", "fuzzy"]
         
         # Tạo file log mới cho loại dữ liệu
     def setup_log_file(self, data_type):
@@ -82,6 +82,16 @@ class Server:
                 "Raw_VelX", "Raw_VelY", 
                 "Filtered_VelX", "Filtered_VelY",
                 "Vel_Control_X", "Vel_Control_Y"
+            ])
+        elif data_type == "fuzzy":
+            self.log_writers[data_type].writerow([
+                "Time", 
+                "M1_Kp", "M1_Ki", "M1_Kd",
+                "M2_Kp", "M2_Ki", "M2_Kd",
+                "M3_Kp", "M3_Ki", "M3_Kd",
+                "Error1", "Error2", "Error3",
+                "Delta1", "Delta2", "Delta3",
+                "Exec_Time"
             ])
             
         self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
@@ -503,6 +513,36 @@ class Server:
             self.log_writers["log"].writerow([f"{timestamp:.3f}", log_message])
             self.log_files["log"].flush()
 
+    def process_fuzzy_data(self, fuzzy_data):
+        """
+        Xử lý dữ liệu điều khiển Fuzzy PID từ robot
+        """
+        try:
+            # Kiểm tra và lấy dữ liệu từng motor
+            motor1_data = fuzzy_data.get("Motor1", [0, 0, 0])
+            motor2_data = fuzzy_data.get("Motor2", [0, 0, 0])
+            motor3_data = fuzzy_data.get("Motor3", [0, 0, 0])
+            error_data = fuzzy_data.get("Error", [0, 0, 0])
+            delta_data = fuzzy_data.get("Delta", [0, 0, 0])
+            exec_time = fuzzy_data.get("Exc Time", 0)
+
+            # Thiết lập file log cho dữ liệu fuzzy
+            self.setup_log_file("fuzzy")
+            if self.log_data and "fuzzy" in self.log_files:
+                timestamp = time.time() - self.common_start_time
+                self.log_writers["fuzzy"].writerow([
+                    f"{timestamp:.3f}", 
+                    f"{motor1_data[0]:.4f}", f"{motor1_data[1]:.4f}", f"{motor1_data[2]:.4f}",
+                    f"{motor2_data[0]:.4f}", f"{motor2_data[1]:.4f}", f"{motor2_data[2]:.4f}",
+                    f"{motor3_data[0]:.4f}", f"{motor3_data[1]:.4f}", f"{motor3_data[2]:.4f}",
+                    f"{error_data[0]:.2f}", f"{error_data[1]:.2f}", f"{error_data[2]:.2f}",
+                    f"{delta_data[0]:.2f}", f"{delta_data[1]:.2f}", f"{delta_data[2]:.2f}",
+                    f"{exec_time}"
+                ])
+                self.log_files["fuzzy"].flush()
+        except Exception as e:
+            self.gui.update_monitor(f"Error processing Fuzzy data: {e}")
+
     def receive_client_data(self, sock):
         buffer = ""  # Lưu dữ liệu bị phân mảnh
         
@@ -530,7 +570,8 @@ class Server:
                                 # Phân phối dữ liệu dựa vào loại
                                 if message_type == "encoder" and "data" in json_data:
                                     self.process_encoder_data(json_data["data"])
-                                    
+                                elif message_type == "fuzzy" and "data" in json_data:
+                                    self.process_fuzzy_data(json_data["data"])        
                                 elif message_type == "bno055" and "data" in json_data:
                                     self.process_bno055_data(json_data["data"])
 

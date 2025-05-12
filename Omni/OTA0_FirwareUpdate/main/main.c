@@ -189,7 +189,8 @@ void ota_update_task(void *pvParameter)
     else
     {
         ESP_LOGW(TAG, "Firmware download complete.");
-        if (esp_ota_end(ota_handle) == ESP_OK)
+        esp_err_t err = esp_ota_end(ota_handle);
+        if (err == ESP_OK)
         {
             esp_ota_set_boot_partition(update_partition);
             ESP_LOGI(TAG, "OTA Update complete. Rebooting...");
@@ -197,7 +198,7 @@ void ota_update_task(void *pvParameter)
         }
         else
         {
-            ESP_LOGE(TAG, "OTA End failed.");
+            ESP_LOGE(TAG, "OTA End failed with error: %s", esp_err_to_name(err));
         }
     }
 

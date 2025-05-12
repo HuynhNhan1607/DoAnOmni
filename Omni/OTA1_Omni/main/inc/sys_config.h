@@ -10,7 +10,7 @@
 #define BNO055_CALIBRATED_BIT (1 << 0)
 
 /*-------------------------------------------*/
-#define USE_FUZZY_PID 1
+#define USE_FUZZY_PID 0
 #define CALIBRATION_KINEMATICS 0
 /*-------------------------------------------*/
 
