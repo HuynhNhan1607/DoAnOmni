@@ -11,9 +11,6 @@ from server_rpm_plot import rpm_plotter
 from server_position import robot_position_visualizer
 from server_trajection import trajectory_visualizer
 
-from ekf_position import ekf  # Thêm dòng này để import module EKF
-import numpy as np
-
 class Server:
     def __init__(self, gui):
         self.gui = gui
@@ -75,14 +72,7 @@ class Server:
         elif data_type == "log":
             self.log_writers[data_type].writerow(["Time", "Message"])
         elif data_type == "position":
-            self.log_writers[data_type].writerow([
-                "Time", 
-                "Raw_X", "Raw_Y", "Raw_Theta", 
-                "Filtered_X", "Filtered_Y", "Filtered_Theta",
-                "Raw_VelX", "Raw_VelY", 
-                "Filtered_VelX", "Filtered_VelY",
-                "Vel_Control_X", "Vel_Control_Y"
-            ])
+            self.log_writers[data_type].writerow(["Time", "X", "Y", "Theta"])
             
         self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
     
@@ -381,10 +371,6 @@ class Server:
                 else:
                     row_data.extend(["NA", "NA", "NA", "NA"])
                 
-                if lin_accel and len(lin_accel) >= 3:
-                    row_data.extend([f"{lin_accel[0]:.2f}", f"{lin_accel[1]:.2f}", f"{lin_accel[2]:.2f}"])
-                else:
-                    row_data.extend(["NA", "NA", "NA"])
                 # Tiếp tục với các dữ liệu khác...
                 
                 self.log_writers["bno055"].writerow(row_data)
@@ -396,100 +382,38 @@ class Server:
     def process_position_data(self, position_data):
         """
         Process position data sent directly from the robot
-        Using EKF with measurement vector [x, y, theta, vx, vy]
+        position_data should be a list [x, y, theta] or dictionary with these keys
         """
         try:
-            # Extract position and velocity from the message
-            if isinstance(position_data, dict):
-                if "position" in position_data and len(position_data["position"]) >= 3:
-                    x = float(position_data["position"][0])
-                    y = float(position_data["position"][1])
-                    theta = float(position_data["position"][2]) * np.pi / 180.0  # Convert to radians
-                else:
-                    self.gui.update_monitor(f"Invalid position data format: {position_data}")
-                    return
-                    
-                # Extract velocity if available
-                vel_x, vel_y = 0.0, 0.0
-                if "velocity" in position_data and len(position_data["velocity"]) >= 2:
-                    vel_x = float(position_data["velocity"][0])
-                    vel_y = float(position_data["velocity"][1])
-                
-                # Extract angular velocity and acceleration if available 
-                omega = 0.0
-                accel_x, accel_y = 0.0, 0.0
-                if "angular_velocity" in position_data:
-                    omega = float(position_data["angular_velocity"])
-                if "acceleration" in position_data and len(position_data["acceleration"]) >= 2:
-                    accel_x = float(position_data["acceleration"][0])
-                    accel_y = float(position_data["acceleration"][1])
-                
-                # Extract velocity control if available (for logging)
-                vel_control_x, vel_control_y = 0.0, 0.0
-                if "vel_control" in position_data and len(position_data["vel_control"]) >= 2:
-                    vel_control_x = float(position_data["vel_control"][0])
-                    vel_control_y = float(position_data["vel_control"][1])
+            # Check if position_data is valid
+            if isinstance(position_data, list) and len(position_data) >= 3:
+                x, y, theta = position_data[0], position_data[1], position_data[2]
+            elif isinstance(position_data, dict) and all(key in position_data for key in ['x', 'y', 'theta']):
+                x = position_data['x']
+                y = position_data['y']
+                theta = position_data['theta']
             else:
-                self.gui.update_monitor(f"Invalid message format: {position_data}")
+                self.gui.update_monitor(f"Invalid position data format: {position_data}")
                 return
-            
-            # Current time for EKF time step calculation
-            current_time = time.time()
-            
-            # Initialize EKF if not yet initialized
-            if not ekf.initialized:
-                ekf.initialize(x, y, theta)
-                ekf.last_time = current_time
                 
-                # First reading - use raw data
-                filtered_x, filtered_y, filtered_theta = x, y, theta
-                filtered_vx, filtered_vy = vel_x, vel_y
-            else:
-                # Calculate time delta
-                dt = current_time - ekf.last_time
-                ekf.last_time = current_time
+            # Convert to float to ensure data type compatibility
+            x = float(x)
+            y = float(y)
+            theta = float(theta)
                 
-                # Create control vector [omega, ax, ay]
-                control = [accel_x, accel_y]
-                
-                # Prediction step with control input
-                ekf.predict(control)
-                
-                # Update with full measurement [x, y, theta, vx, vy]
-                # ekf.update(x, y, theta, vel_x, vel_y)
-                ekf.update(theta, vel_x, vel_y)
-                # Get filtered state
-                state = ekf.get_state()
-                filtered_x = state['x']
-                filtered_y = state['y'] 
-                filtered_theta = state['theta']
-                filtered_vx = state['v_x']
-                filtered_vy = state['v_y']
-                
-            # Convert theta back to degrees for visualization
-            filtered_theta_deg = filtered_theta * 180.0 / np.pi
-                
-            # Update robot position visualizer with filtered data
+            # Update robot position directly in the trajectory visualizer
             robot_position_visualizer.update_robot_position(x, y, theta)
             
-            # Log both raw and filtered data
+            # Log data if enabled
             self.setup_log_file("position")
             if self.log_data and "position" in self.log_files:
                 timestamp = time.time() - self.common_start_time
-                self.log_writers["position"].writerow([
-                    f"{timestamp:.3f}", 
-                    f"{x:.4f}", f"{y:.4f}", f"{theta*180/np.pi:.4f}",
-                    f"{filtered_x:.4f}", f"{filtered_y:.4f}", f"{filtered_theta_deg:.4f}",
-                    f"{vel_x:.4f}", f"{vel_y:.4f}", 
-                    f"{filtered_vx:.4f}", f"{filtered_vy:.4f}",
-                    f"{vel_control_x:.4f}", f"{vel_control_y:.4f}"
-                ])
+                self.log_writers["position"].writerow([f"{timestamp:.3f}", f"{x:.4f}", f"{y:.4f}", f"{theta:.4f}"])
                 self.log_files["position"].flush()
                 
+            # self.gui.update_monitor(f"Updated robot position: x={x:.2f}, y={y:.2f}, θ={theta:.2f}")
         except Exception as e:
-            self.gui.update_monitor(f"Error processing position data: {e}")
-            import traceback
-            traceback.print_exc()
+            self.gui.update_monitor(f"Error processing position data: {e}")    
 
     # Hàm xử lý thông điệp log từ thiết bị
     def process_log_message(self, log_message):
@@ -539,15 +463,7 @@ class Server:
 
                                 elif message_type == "log" and "message" in json_data:
                                     self.process_log_message(json_data["message"])
-                                elif message_type == "registration" and "robot_id" in json_data:
-                                    robot_id = json_data["robot_id"]
-                                    self.gui.update_monitor(f"Robot {robot_id} registered")
-                                    # Send registration response immediately
-                                    try:
-                                        sock.sendall("registration_response".encode())
-                                        self.gui.update_monitor(f"Sent registration confirmation to robot {robot_id}")
-                                    except Exception as e:
-                                        self.gui.update_monitor(f"Error sending registration response: {e}")
+                                    
                                 else:
                                     self.gui.update_monitor(f"Unknown message type or missing data: {json_data}")
                             

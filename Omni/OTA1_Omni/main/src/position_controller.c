@@ -82,7 +82,6 @@ void position_control_task(void *pvParameters)
         {
             position_reached = true;
             set_control(0.0f, 0.0f, 0.0f); // Stop robot
-            set_control_velocity(0.0f, 0.0f);
             ESP_LOGI(TAG, "Target position reached");
         }
         else
@@ -101,7 +100,7 @@ void position_control_task(void *pvParameters)
                 vel_x *= scale;
                 vel_y *= scale;
             }
-            set_control_velocity(vel_x, vel_y);
+
             // Send velocity commands to robot (no angular velocity)
             set_control(vel_x, vel_y, 0.0f);
 

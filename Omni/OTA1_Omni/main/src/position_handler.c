@@ -16,7 +16,6 @@ static const char *TAG_POS = "Position_Handler";
 
 // Vị trí robot
 static RobotPos_t robot_position = {0.0f, 0.0f, 0.0f};
-static RobotVel_t robot_velocity = {0.0f, 0.0f, 0.0f}; // Vận tốc robot
 
 // Mutex cho việc truy cập vị trí
 static SemaphoreHandle_t position_mutex = NULL;
@@ -26,20 +25,11 @@ extern float encoder_rpm[NUM_MOTORS];
 // Task handle
 static TaskHandle_t fk_task_handle = NULL;
 
-static float control_vel_x = 0.0f; // Vận tốc điều khiển theo trục x
-static float control_vel_y = 0.0f; // Vận tốc điều khiển theo trục y
-
 #define DT 0.1f // chu kỳ lấy mẫu (100ms)
 
 float rpm_to_rad_s(float rpm)
 {
     return (rpm * 2.0f * M_PI) / 60.0f;
-}
-
-void set_control_velocity(float vel_x, float vel_y)
-{
-    control_vel_x = vel_x;
-    control_vel_y = vel_y;
 }
 
 // Hàm lấy vị trí hiện tại của robot
@@ -88,24 +78,15 @@ void forward_kinematics_task(void *pvParameters)
 
     float omega_wheels[3];
     float theta = 0.0f;
-    float accel_x, accel_y, accel_z = 0.0f;
 
-    int64_t previous_time = 0;
-    int64_t current_time;
-    float dt_actual;
-
-    previous_time = esp_timer_get_time();
-
-    bool simpson_initialized = 0;
     while (1)
     {
 #if USE_THETA == 1
         robot_position.pos_theta = get_heading() * M_PI / 180.0f; // Chuyển độ sang radian
-        theta = robot_position.pos_theta;
 #else
-        robot_position.pos_theta = 0.0f; // Không sử dụng cảm biến BNO055
-        theta = 0.0f;
+        robot_position.pos_theta = 0.0f;
 #endif
+        theta = robot_position.pos_theta;
 
         for (int i = 0; i < NUM_MOTORS; i++)
         {
@@ -126,60 +107,48 @@ void forward_kinematics_task(void *pvParameters)
                    H[1][1] * omega_wheels[1] * WHEEL_RADIUS +
                    H[1][2] * omega_wheels[2] * WHEEL_RADIUS;
 
-        // float omega = H[2][0] * omega_wheels[0] * WHEEL_RADIUS +
-        //               H[2][1] * omega_wheels[1] * WHEEL_RADIUS +
-        //               H[2][2] * omega_wheels[2] * WHEEL_RADIUS;
+        float omega = H[2][0] * omega_wheels[0] * WHEEL_RADIUS +
+                      H[2][1] * omega_wheels[1] * WHEEL_RADIUS +
+                      H[2][2] * omega_wheels[2] * WHEEL_RADIUS;
 
-        current_time = esp_timer_get_time();
-        // dt_actual = (current_time - previous_time) / 1000000.0f;
-        dt_actual = DT; // Sử dụng chu kỳ cố định 100ms
-
+        // Cập nhật vị trí bằng cách tích phân vận tốc
         if (position_mutex != NULL && xSemaphoreTake(position_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
         {
-            get_accel(&accel_x, &accel_y, &accel_z);
-            // Lưu giá trị vận tốc mới nhất
-
-            robot_position.pos_x += vx * dt_actual;
-            robot_position.pos_y += vy * dt_actual;
-
-            robot_velocity.vel_x = vx;
-            robot_velocity.vel_y = vy;
+            robot_position.pos_x += vx * DT;
+            robot_position.pos_y += vy * DT;
 
             xSemaphoreGive(position_mutex);
         }
-        else
-        {
-            ESP_LOGW(TAG_POS, "forward_kinematics_task() - Failed mutex");
-        }
 
-        previous_time = current_time;
-
-        ESP_LOGI(TAG_POS, "Velocities: vx=%.4f, vy=%.4f", vx, vy);
+        ESP_LOGI(TAG_POS, "Velocities: vx=%.4f, vy=%.4f, omega=%.4f", vx, vy, omega);
         ESP_LOGI(TAG_POS, "Position: x=%.4f, y=%.4f, theta=%.4f",
                  robot_position.pos_x, robot_position.pos_y, robot_position.pos_theta);
 
         if (sock >= 0)
         {
+#if FAKE_DATA == 1
             snprintf(json_buffer, sizeof(json_buffer),
                      "{"
                      "\"id\":\"%s\","
                      "\"type\":\"position\","
-                     "\"data\":{"
-                     "\"position\":[%.4f,%.4f,%.4f],"
-                     "\"velocity\":[%.4f,%.4f],"
-                     "\"acceleration\":[%.4f,%.4f,%.4f],"
-                     "\"vel_control\":[%.4f,%.4f]"
-                     "}"
+                     "\"data\":[%.4f,%.4f,%.4f]"
                      "}\n",
                      ID_ROBOT,
-                     robot_position.pos_x, robot_position.pos_y,
-                     robot_position.pos_theta * 180.0f / M_PI,
-                     robot_velocity.vel_x,
-                     robot_velocity.vel_y,
-                     accel_x, accel_y, accel_z,
-                     control_vel_x,
-                     control_vel_y);
-
+                     1.8f + (rand() % 100) / 100.0f,
+                     1.2f + (rand() % 100) / 100.0f,
+                     robot_position.pos_theta * 180.0f / M_PI);
+#else
+            snprintf(json_buffer, sizeof(json_buffer),
+                     "{"
+                     "\"id\":\"%s\","
+                     "\"type\":\"position\","
+                     "\"data\":[%.4f,%.4f,%.4f]"
+                     "}\n",
+                     ID_ROBOT,
+                     robot_position.pos_x,
+                     robot_position.pos_y,
+                     robot_position.pos_theta * 180.0f / M_PI);
+#endif
             if (send(sock, json_buffer, strlen(json_buffer), 0) < 0)
             {
                 ESP_LOGE(TAG_POS, "Failed to send position data");
@@ -196,7 +165,7 @@ void start_forward_kinematics(int *socket)
         position_mutex = xSemaphoreCreateMutex();
     }
 
-    RobotPos_t init_pos = {1.8f, 1.2f, 0.0f}; // mét
+    RobotPos_t init_pos = {1.8f, 1.2f, 0.0f}; // metre
     set_robot_position(&init_pos);
 
     if (fk_task_handle == NULL)

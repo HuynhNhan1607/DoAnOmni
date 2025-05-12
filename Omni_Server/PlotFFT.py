@@ -1,33 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fftpack import fft, fftfreq
-import pandas as pd
 
-# BƯỚC 1: Đọc dữ liệu từ file .csv
-file_path = "d:/Project/DoAn/Omni_Server/logs/encoder_log_20250406_183151.csv"
-# Đọc dữ liệu sử dụng pandas
-df = pd.read_csv(file_path, comment='/')  # Bỏ qua dòng comment bắt đầu bằng //
+# BƯỚC 1: Đọc dữ liệu từ file .txt
+# file_path = "Filter_Data.txt"  # Cập nhật tên file nếu cần
+file_path = "Filter_Data.txt"  # Cập nhật tên file nếu cần
+data = np.loadtxt(file_path)
 
 # BƯỚC 2: Tách dữ liệu động cơ
-rpm_1 = df['RPM1'].values  # Động cơ 1
-rpm_2 = df['RPM2'].values  # Động cơ 2
-rpm_3 = df['RPM3'].values  # Động cơ 3
-
-# Bỏ qua các giá trị 0 ban đầu (chỉ lấy dữ liệu từ khi có chuyển động)
-non_zero_idx = np.where((rpm_1 != 0) | (rpm_2 != 0) | (rpm_3 != 0))[0]
-if len(non_zero_idx) > 0:
-    start_idx = np.min(non_zero_idx)
-    rpm_1 = rpm_1[start_idx:]
-    rpm_2 = rpm_2[start_idx:]
-    rpm_3 = rpm_3[start_idx:]
+rpm_1 = data[:, 0]  # Động cơ 1
+rpm_2 = data[:, 1]  # Động cơ 2
+rpm_3 = data[:, 2]  # Động cơ 3
 
 # BƯỚC 3: Cài đặt thông số FFT
-fs = 50  # Tần số lấy mẫu cố định (Hz) - tương ứng 20ms
+fs = 50  # Tần số lấy mẫu (Hz)
 N = len(rpm_1)  # Số mẫu dữ liệu
-T = 1 / fs  # Khoảng thời gian giữa 2 mẫu (20ms)
-
-# Tạo mảng thời gian mới
-time = np.arange(0, N * T, T)
+T = 1 / fs  # Khoảng thời gian giữa 2 mẫu
 
 # Hàm tính FFT
 def compute_fft(signal, N, fs):
@@ -52,16 +40,4 @@ plt.ylabel("Biên độ")
 plt.title("Phân tích phổ tần số của RPM động cơ (Dạng cột)")
 plt.legend()
 plt.grid()
-
-# BƯỚC 5: Vẽ thêm biểu đồ giá trị RPM theo thời gian
-plt.figure(figsize=(12, 5))
-plt.plot(time, rpm_1, label="RPM Động cơ 1", color='blue')
-plt.plot(time, rpm_2, label="RPM Động cơ 2", color='orange')
-plt.plot(time, rpm_3, label="RPM Động cơ 3", color='green')
-plt.xlabel("Thời gian (s)")
-plt.ylabel("RPM")
-plt.title("Vận tốc động cơ theo thời gian")
-plt.legend()
-plt.grid()
-
 plt.show()
