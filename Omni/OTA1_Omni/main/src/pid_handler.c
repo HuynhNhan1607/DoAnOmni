@@ -121,7 +121,8 @@ void update_rpm(float *encoder_rpm, float *pid_rpm)
     {
         pid_rpm[i] = pid_compute(&pid_motor[i], encoder_rpm[i], i);
     }
-
+    int64_t end_time = esp_timer_get_time();
+    int64_t execution_time = end_time - start_time;
 
 #if USE_FUZZY_PID == 1
 

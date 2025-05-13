@@ -4,7 +4,7 @@ import numpy as np
 
 # Đọc dữ liệu từ CSV
 # df = pd.read_csv('logs/encoder_log_20250512_211356.csv') // FuzzyLog
-df = pd.read_csv('logs/encoder_log_20250512_212230.csv')
+df = pd.read_csv('logs/encoder_log_20250512_230849.csv')
 # Lấy các cột RPM
 rpm1 = df['RPM1'].values
 rpm2 = df['RPM2'].values
