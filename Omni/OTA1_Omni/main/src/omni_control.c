@@ -47,9 +47,9 @@ void calculate_wheel_speeds(RobotParams *params, float *omega1, float *omega2, f
         {0.5 * sin_theta + 0.866025 * cos_theta, 0.866025 * sin_theta - 0.5 * cos_theta, L3}};
 #else
     float H_inv[3][3] = {
-        {-sin_theta - 0.0032 * cos_theta, -0.0032 * sin_theta + cos_theta, L1},
-        {0.465769 * sin_theta - 0.884906 * cos_theta, -0.884906 * sin_theta - 0.465769 * cos_theta, L2},
-        {0.58224 * sin_theta + 0.813012 * cos_theta, 0.813012 * sin_theta - 0.58224 * cos_theta, L3}};
+        {-0.99753 * sin_theta - 0.07024 * cos_theta, -0.07024 * sin_theta + 0.99753 * cos_theta, L1},
+        {0.5527 * sin_theta - 0.833378 * cos_theta, -0.833378 * sin_theta - 0.5527 * cos_theta, L2},
+        {0.56924 * sin_theta + 0.82216 * cos_theta, 0.82216 * sin_theta - 0.56924 * cos_theta, L3}};
 #endif
 
     // Tính toán vận tốc góc

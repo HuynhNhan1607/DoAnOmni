@@ -250,7 +250,7 @@ void app_main()
     int socket = setup_socket();
     register_robot(socket);
     xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
-    waitRegistrationResponse();
+    // waitRegistrationResponse();
 #if LOG_SERVER == 1
     log_init(socket);
 #endif
