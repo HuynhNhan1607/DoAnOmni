@@ -581,7 +581,7 @@ class Server:
 
     def send_command(self, dot_x, dot_y, dot_theta):
         # Gửi lệnh điều khiển đến client
-        stop_time = 20;
+        stop_time = 6;
         if not self.client_connected:
             print("Not connected - can't send command")
             return
