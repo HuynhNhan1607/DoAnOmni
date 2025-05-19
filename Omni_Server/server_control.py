@@ -4,18 +4,17 @@ import math
 import time
 
 ANGLE_ROTATION = 2 * math.pi  # (Rad/s)
-TIME_ROTATION = 5  # 2s
+TIME_ROTATION = 4  # 2s
 RPM = 50
 M_PER_ROUND = 0.06 * math.pi
  
-T = 5 #s - Time for test 1m
+# T = 5 #s - Time for test 1m
 class ControlGUI:
     def __init__(self, root):
         self.root = root
         self.server = None
         self.orientation = 0  # Hướng của robot (góc quay)
-        # self.max_speed = RPM * M_PER_ROUND / 60
-        self.max_speed = 1/T
+        self.max_speed = RPM * M_PER_ROUND / 60
         self.control_window = None
         self.recording = False
         self.trajectory = []
@@ -118,11 +117,11 @@ class ControlGUI:
             dot_x += self.max_speed
             self.update_status("Moving Right")
         elif key == "q":  # Quay trái
-            dot_theta = -(ANGLE_ROTATION / T)
+            dot_theta = -(ANGLE_ROTATION / TIME_ROTATION)
             self.orientation += dot_theta * 0.1
             self.update_status("Rotating Left")
         elif key == "e":  # Quay phải
-            dot_theta = ANGLE_ROTATION / T
+            dot_theta = (ANGLE_ROTATION / TIME_ROTATION)
             self.orientation += dot_theta * 0.1
             self.update_status("Rotating Right")
         elif key == "r":  # Ghi quỹ đạo
@@ -143,6 +142,39 @@ class ControlGUI:
             if self.recording:
                 self.trajectory.append((dot_x, dot_y, dot_theta))
     
+    def manual_sequence(self):
+        commands = [
+            ("w", "Moving Forward"),
+            ("s", "Moving Backward"),
+            ("q", "Rotating Left"),
+            ("c", "Stopped"),
+        ]
+        def send_next(index=0):
+            if index >= len(commands):
+                self.update_status("Manual Sequence Finished")
+                return
+            key, status = commands[index]
+            self.update_status(status)
+            # Gửi lệnh tương ứng
+            if key == "w":
+                self.send_command(0, self.max_speed, 0)
+            elif key == "s":
+                self.send_command(0, -self.max_speed, 0)
+            elif key == "a":
+                self.send_command(-self.max_speed, 0, 0)
+            elif key == "d":
+                self.send_command(self.max_speed, 0, 0)
+            elif key == "q":
+                self.send_command(0, 0, -(ANGLE_ROTATION / TIME_ROTATION))
+            elif key == "e":
+                self.send_command(0, 0, (ANGLE_ROTATION / TIME_ROTATION))
+            elif key == "c":
+                self.send_command(0, 0, 0)
+            # Lặp lại sau 5 giây
+            if self.control_window:
+                self.control_window.after(5000, lambda: send_next(index + 1))
+        send_next()
+
     def on_key_release(self, event):
         key = event.keysym.lower()
         self.key_states[key] = False

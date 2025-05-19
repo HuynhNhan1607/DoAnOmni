@@ -213,5 +213,13 @@ void app_main(void)
     connect_to_wifi();
     socket = init_socket();
     // log_init(socket);
-    xTaskCreate(&ota_update_task, "ota_update_task", 8192, (void *)&socket, 5, NULL);
+    if (socket > 0)
+    {
+        xTaskCreate(&ota_update_task, "ota_update_task", 8192, (void *)&socket, 5, NULL);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to initialize socket.");
+        return;
+    }
 }

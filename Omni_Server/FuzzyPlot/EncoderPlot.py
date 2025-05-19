@@ -4,11 +4,14 @@ import numpy as np
 
 # Đọc dữ liệu từ CSV
 # df = pd.read_csv('logs/encoder_log_20250512_211356.csv') // FuzzyLog
-df = pd.read_csv('logs/encoder_log_20250512_230849.csv')
+df = pd.read_csv('logs/encoder_log_20250518_162937.csv')
 # Lấy các cột RPM
 rpm1 = df['RPM1'].values
 rpm2 = df['RPM2'].values
 rpm3 = df['RPM3'].values
+
+
+# encoder_log_20250518_161650
 
 # Tạo trục thời gian mới, mỗi dòng cách nhau 50ms
 time_values = np.arange(len(rpm1)) * 0.05  # 50ms = 0.05s
