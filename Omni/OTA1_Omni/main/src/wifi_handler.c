@@ -4,7 +4,7 @@
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
-
+#include "esp_now.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -74,6 +74,7 @@ void connect_to_wifi()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
 
     ESP_LOGI(TAG_Wifi, "Waiting for Wi-Fi connection...");
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);

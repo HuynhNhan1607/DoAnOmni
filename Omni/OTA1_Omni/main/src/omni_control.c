@@ -12,10 +12,6 @@
 #include "LPF.h"
 #include "bno055_handler.h"
 
-#define WHEEL_RADIUS 0.03   // Bán kính bánh xe (m)
-#define ROBOT_RADIUS 0.1543 // Khoảng cách từ tâm robot đến bánh xe (m)
-#define WEIGHT 2.0          // Trọng lượng robot (kg)
-
 extern PID_t pid_motor[NUM_MOTORS];
 extern LPF encoder_lpf[NUM_MOTORS];
 
@@ -36,32 +32,30 @@ float rad_s_to_rpm(float rad_s)
     return (rad_s * 60) / (2 * M_PI);
 }
 
-// Chuyển đổi vận tốc từ global frame sang body frame
-void global_to_body(float X_dot_c, float Y_dot_c, float theta_c, float *X_dot_b, float *Y_dot_b)
-{
-    *X_dot_b = X_dot_c * cos(theta_c) + Y_dot_c * sin(theta_c);
-    *Y_dot_b = -X_dot_c * sin(theta_c) + Y_dot_c * cos(theta_c);
-}
+/*
 
+*/
 void calculate_wheel_speeds(RobotParams *params, float *omega1, float *omega2, float *omega3)
 {
-    // Chuyển đổi vận tốc từ global frame sang body frame
-    float X_dot_b, Y_dot_b;
-    X_dot_b = params->dot_x;
-    Y_dot_b = params->dot_y;
-    // global_to_body(params->dot_x, params->dot_y, params->theta, &X_dot_b, &Y_dot_b);
-    // ESP_LOGI(TAG, "Body frame: X_dot_b=%.4f, Y_dot_b=%.4f", X_dot_b, Y_dot_b);
-    ESP_LOGI(TAG, "Recalculating with heading: (%.4f rad)", params->theta);
-    // Ma trận H^-1
+    float sin_theta = sin(params->theta);
+    float cos_theta = cos(params->theta);
+
+#if IDEAL == 1
     float H_inv[3][3] = {
-        {-sin(params->theta), cos(params->theta), params->robot_radius},
-        {-sin(M_PI / 3 - params->theta), -cos(M_PI / 3 - params->theta), params->robot_radius},
-        {sin(M_PI / 3 + params->theta), -cos(M_PI / 3 + params->theta), params->robot_radius}};
+        {-sin_theta, cos_theta, L1},
+        {0.5 * sin_theta - 0.866025 * cos_theta, -0.866025 * sin_theta - 0.5 * cos_theta, L2},
+        {0.5 * sin_theta + 0.866025 * cos_theta, 0.866025 * sin_theta - 0.5 * cos_theta, L3}};
+#else
+    float H_inv[3][3] = {
+        {-sin_theta - 0.0032 * cos_theta, -0.0032 * sin_theta + cos_theta, L1},
+        {0.465769 * sin_theta - 0.884906 * cos_theta, -0.884906 * sin_theta - 0.465769 * cos_theta, L2},
+        {0.58224 * sin_theta + 0.813012 * cos_theta, 0.813012 * sin_theta - 0.58224 * cos_theta, L3}};
+#endif
 
     // Tính toán vận tốc góc
-    *omega1 = (H_inv[0][0] * X_dot_b + H_inv[0][1] * Y_dot_b + H_inv[0][2] * params->dot_theta) / params->wheel_radius;
-    *omega2 = (H_inv[1][0] * X_dot_b + H_inv[1][1] * Y_dot_b + H_inv[1][2] * params->dot_theta) / params->wheel_radius;
-    *omega3 = (H_inv[2][0] * X_dot_b + H_inv[2][1] * Y_dot_b + H_inv[2][2] * params->dot_theta) / params->wheel_radius;
+    *omega1 = (H_inv[0][0] * params->dot_x + H_inv[0][1] * params->dot_y + H_inv[0][2] * params->dot_theta) / r1;
+    *omega2 = (H_inv[1][0] * params->dot_x + H_inv[1][1] * params->dot_y + H_inv[1][2] * params->dot_theta) / r2;
+    *omega3 = (H_inv[2][0] * params->dot_x + H_inv[2][1] * params->dot_y + H_inv[2][2] * params->dot_theta) / r3;
 
     ESP_LOGI(TAG, "Omega: %.2f, %.2f, %.2f rad/s", *omega1, *omega2, *omega3);
 }
@@ -78,7 +72,7 @@ void apply_wheel_speeds(void)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
 
-        LPF_Clear(&encoder_lpf[i], rpm[i]);
+        LPF_Clear(&encoder_lpf[i], 0);
         pulse[i] = rpm_to_pulse(rpm[i]);
 
         // Xác định hướng động cơ
@@ -101,7 +95,8 @@ void apply_wheel_speeds(void)
     for (int i = 0; i < NUM_MOTORS; i++)
     {
         rpm[i] = rad_s_to_rpm(omega[i]);
-        LPF_Clear(&encoder_lpf[i], rpm[i]);
+        // LPF_Clear(&encoder_lpf[i], rpm[i]);
+        LPF_Clear(&encoder_lpf[i], 0);
         pid_set_setpoint(&pid_motor[i], rpm[i]);
     }
 #endif
@@ -119,7 +114,7 @@ void wheel_speed_calculation_task(void *pvParameters)
     {
 #if USE_THETA == 1
         float current_heading = get_heading();
-        robot.theta = -(current_heading * M_PI) / 180.0f;
+        robot.theta = (current_heading * M_PI) / 180.0f;
         ESP_LOGI(TAG, "Recalculating with heading: %.2f", current_heading);
 #endif
         // Tính toán vận tốc góc mới
@@ -131,23 +126,35 @@ void wheel_speed_calculation_task(void *pvParameters)
     }
 }
 
-void omni_control(float dot_x, float dot_y, float dot_theta)
+void set_control(float dot_x, float dot_y, float dot_theta)
 {
-
+    // Only update the velocity commands
     robot.dot_x = dot_x;
     robot.dot_y = dot_y;
     robot.dot_theta = dot_theta;
+
+#if USE_THETA == 1
+    // Update current heading
+    float current_heading = get_heading();
+    robot.theta = (current_heading * M_PI) / 180.0f;
+#endif
+    ESP_LOGI(TAG, "Set control: dot_x=%.4f, dot_y=%.4f, dot_theta=%.4f",
+             dot_x, dot_y, dot_theta);
+    // Calculate and apply wheel speeds immediately for responsive control
+    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
+    apply_wheel_speeds();
+}
+void omni_init()
+{
+    robot.dot_x = 0;
+    robot.dot_y = 0;
+    robot.dot_theta = 0;
     robot.theta = 0;
     robot.wheel_radius = WHEEL_RADIUS;
     robot.robot_radius = ROBOT_RADIUS;
-#if USE_THETA == 1
-    float current_heading = get_heading();
-    robot.theta = -(current_heading * M_PI) / 180.0f;
-#endif
     // Dùng để đáp ứng điều khiển ngay lập tức, không phải đợi task chạy
-    calculate_wheel_speeds(&robot, &omega[0], &omega[1], &omega[2]);
-    apply_wheel_speeds();
-
+    // apply_wheel_speeds();
+#if USE_THETA == 1
     if (wheel_speed_task_handle == NULL)
     {
         xTaskCreate(wheel_speed_calculation_task,
@@ -159,4 +166,5 @@ void omni_control(float dot_x, float dot_y, float dot_theta)
 
         ESP_LOGI(TAG, "Wheel speed calculation task started");
     }
+#endif
 }

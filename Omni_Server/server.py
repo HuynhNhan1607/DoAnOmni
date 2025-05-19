@@ -4,13 +4,15 @@ import socket
 import threading
 import re
 import time
-import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
-from raw_control import ControlGUI
+from tkinter import messagebox
 
-from rpm_plot import update_rpm_plot
-from rpm_plot import rpm_plotter
+from server_rpm_plot import update_rpm_plot
+from server_rpm_plot import rpm_plotter
+from server_position import robot_position_visualizer
+from server_trajection import trajectory_visualizer
 
+from ekf_position import ekf  # Thêm dòng này để import module EKF
+import numpy as np
 
 class Server:
     def __init__(self, gui):
@@ -21,6 +23,7 @@ class Server:
         self.file_path = None
         self.speed = [0, 0, 0]  # Speed for three motors
         self.encoders = [0, 0, 0]  # Encoder values for three motors
+        self.bno055_heading = 0.0
         self.pid_values = [[0.0, 0.0, 0.0] for _ in range(3)]  # PID values as floats
         self.bno055_calibrated = False
 
@@ -33,8 +36,8 @@ class Server:
                 # Khởi tạo dictionary để quản lý file log
         self.log_files = {}
         self.start_times = {}
-        self.supported_types = ["encoder", "bno055", "log"]
-    
+        self.supported_types = ["encoder", "bno055", "log", "position"]
+        
         # Tạo file log mới cho loại dữ liệu
     def setup_log_file(self, data_type):
         if not self.log_data:
@@ -52,17 +55,34 @@ class Server:
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
         session_id = time.strftime('%Y%m%d_%H%M%S', time.localtime(self.common_start_time))
-        log_filename = f"{log_dir}/{data_type}_log_{session_id}.txt"
+        log_filename = f"{log_dir}/{data_type}_log_{session_id}.csv"
         
-        self.log_files[data_type] = open(log_filename, "w")
+        self.log_files[data_type] = open(log_filename, "w", newline='')
+        
+        # Sử dụng csv writer cho tất cả các loại dữ liệu
+        import csv
+        self.log_writers = getattr(self, 'log_writers', {})
+        self.log_writers[data_type] = csv.writer(self.log_files[data_type])
         
         # Create header based on data type
         if data_type == "encoder":
-            self.log_files[data_type].write("Time RPM1 RPM2 RPM3\n")
+            self.log_writers[data_type].writerow(["Time", "RPM1", "RPM2", "RPM3"])
         elif data_type == "bno055":
-            self.log_files[data_type].write("Time Heading Pitch Roll W X Y Z AccelX AccelY AccelZ GravityX GravityY GravityZ\n")
+            self.log_writers[data_type].writerow(["Time", "Heading", "Pitch", "Roll", 
+                                                 "W", "X", "Y", "Z", 
+                                                 "AccelX", "AccelY", "AccelZ", 
+                                                 "GravityX", "GravityY", "GravityZ"])
         elif data_type == "log":
-            self.log_files[data_type].write("Time Message\n")
+            self.log_writers[data_type].writerow(["Time", "Message"])
+        elif data_type == "position":
+            self.log_writers[data_type].writerow([
+                "Time", 
+                "Raw_X", "Raw_Y", "Raw_Theta", 
+                "Filtered_X", "Filtered_Y", "Filtered_Theta",
+                "Raw_VelX", "Raw_VelY", 
+                "Filtered_VelX", "Filtered_VelY",
+                "Vel_Control_X", "Vel_Control_Y"
+            ])
             
         self.gui.update_monitor(f"Started logging {data_type} data to {log_filename}")
     
@@ -99,11 +119,6 @@ class Server:
             self.gui.enable_file_selection()
 
             threading.Thread(target=self.receive_upgrade, args=(self.client_socket,), daemon=True).start()
-            
-            # Send initialization message to client
-            # init_message = "WAIT_FOR_FIRMWARE"
-            # self.client_socket.sendall(init_message.encode())
-            # self.gui.update_monitor("Sent initialization message to client")
             
         except Exception as e:
             self.firmware_active = False
@@ -272,11 +287,14 @@ class Server:
         self.gui.update_encoders(self.encoders)
         update_rpm_plot(self.encoders)
         
+        trajectory_visualizer.update_trajectory(self.encoders, self.bno055_heading)
+
         # Ghi log nếu được bật
         self.setup_log_file("encoder")
         if self.log_data and "encoder" in self.log_files:
             timestamp = time.time() - self.common_start_time
-            self.log_files["encoder"].write(f"{timestamp:.3f} {' '.join([str(e) for e in self.encoders])}\n")
+            self.log_writers["encoder"].writerow([f"{timestamp:.3f}", str(self.encoders[0]), 
+                                                 str(self.encoders[1]), str(self.encoders[2])])
             self.log_files["encoder"].flush()
 
     # Hàm xử lý dữ liệu BNO055
@@ -317,6 +335,9 @@ class Server:
             # Xử lý dữ liệu euler nếu có
             if euler and len(euler) >= 3:
                 heading, pitch, roll = euler[0], euler[1], euler[2]
+
+                self.bno055_heading = heading
+
                 log_parts.extend([f"{heading:.2f}", f"{pitch:.2f}", f"{roll:.2f}"])
             else:
                 log_parts.extend(["NA", "NA", "NA"])
@@ -345,11 +366,131 @@ class Server:
             # Ghi log nếu được bật
             self.setup_log_file("bno055")
             if self.log_data and "bno055" in self.log_files:
-                self.log_files["bno055"].write(" ".join(log_parts) + "\n")
+                row_data = [f"{time.time() - self.common_start_time:.3f}"]
+                
+                # Thêm dữ liệu euler nếu có
+                if euler and len(euler) >= 3:
+                    row_data.extend([f"{euler[0]:.2f}", f"{euler[1]:.2f}", f"{euler[2]:.2f}"])
+                else:
+                    row_data.extend(["NA", "NA", "NA"])
+                    
+                # Thêm dữ liệu quaternion nếu có
+                if quaternion and len(quaternion) >= 4:
+                    row_data.extend([f"{quaternion[0]:.4f}", f"{quaternion[1]:.4f}", 
+                                     f"{quaternion[2]:.4f}", f"{quaternion[3]:.4f}"])
+                else:
+                    row_data.extend(["NA", "NA", "NA", "NA"])
+                
+                if lin_accel and len(lin_accel) >= 3:
+                    row_data.extend([f"{lin_accel[0]:.2f}", f"{lin_accel[1]:.2f}", f"{lin_accel[2]:.2f}"])
+                else:
+                    row_data.extend(["NA", "NA", "NA"])
+                # Tiếp tục với các dữ liệu khác...
+                
+                self.log_writers["bno055"].writerow(row_data)
                 self.log_files["bno055"].flush()
                     
         except Exception as e:
             self.gui.update_monitor(f"Error processing BNO055 data: {e}")
+
+    def process_position_data(self, position_data):
+        """
+        Process position data sent directly from the robot
+        Using EKF with measurement vector [x, y, theta, vx, vy]
+        """
+        try:
+            # Extract position and velocity from the message
+            if isinstance(position_data, dict):
+                if "position" in position_data and len(position_data["position"]) >= 3:
+                    x = float(position_data["position"][0])
+                    y = float(position_data["position"][1])
+                    theta = float(position_data["position"][2]) 
+                else:
+                    self.gui.update_monitor(f"Invalid position data format: {position_data}")
+                    return
+                    
+                # Extract velocity if available
+                vel_x, vel_y = 0.0, 0.0
+                if "velocity" in position_data and len(position_data["velocity"]) >= 2:
+                    vel_x = float(position_data["velocity"][0])
+                    vel_y = float(position_data["velocity"][1])
+                
+                # Extract angular velocity and acceleration if available 
+                omega = 0.0
+                accel_x, accel_y = 0.0, 0.0
+                if "angular_velocity" in position_data:
+                    omega = float(position_data["angular_velocity"])
+                if "acceleration" in position_data and len(position_data["acceleration"]) >= 2:
+                    accel_x = float(position_data["acceleration"][0])
+                    accel_y = float(position_data["acceleration"][1])
+                
+                # Extract velocity control if available (for logging)
+                vel_control_x, vel_control_y = 0.0, 0.0
+                if "vel_control" in position_data and len(position_data["vel_control"]) >= 2:
+                    vel_control_x = float(position_data["vel_control"][0])
+                    vel_control_y = float(position_data["vel_control"][1])
+            else:
+                self.gui.update_monitor(f"Invalid message format: {position_data}")
+                return
+            
+            # Current time for EKF time step calculation
+            current_time = time.time()
+            
+            # Initialize EKF if not yet initialized
+            if not ekf.initialized:
+                ekf.initialize(x, y, theta)
+                ekf.last_time = current_time
+                
+                # First reading - use raw data
+                filtered_x, filtered_y, filtered_theta = x, y, theta
+                filtered_vx, filtered_vy = vel_x, vel_y
+            else:
+                # Calculate time delta
+                dt = current_time - ekf.last_time
+                ekf.last_time = current_time
+                
+                # Create control vector [omega, ax, ay]
+                control = [accel_x, accel_y]
+                
+                # Prediction step with control input
+                ekf.predict(control)
+                
+                # Update with full measurement [x, y, theta, vx, vy]
+                # ekf.update(x, y, theta, vel_x, vel_y)
+                ekf.update(theta, vel_x, vel_y)
+                # Get filtered state
+                state = ekf.get_state()
+                filtered_x = state['x']
+                filtered_y = state['y'] 
+                filtered_theta = state['theta']
+                filtered_vx = state['v_x']
+                filtered_vy = state['v_y']
+                
+            # Convert theta back to degrees for visualization
+            filtered_theta_deg = filtered_theta * 180.0 / np.pi
+                
+            # Update robot position visualizer with filtered data
+            robot_position_visualizer.update_robot_position(x, y, theta)
+            
+            # Log both raw and filtered data
+            self.setup_log_file("position")
+            if self.log_data and "position" in self.log_files:
+                timestamp = time.time() - self.common_start_time
+                self.log_writers["position"].writerow([
+                    f"{timestamp:.3f}", 
+                    f"{x:.4f}", f"{y:.4f}", f"{theta*180/np.pi:.4f}",
+                    f"{filtered_x:.4f}", f"{filtered_y:.4f}", f"{filtered_theta_deg:.4f}",
+                    f"{vel_x:.4f}", f"{vel_y:.4f}", 
+                    f"{filtered_vx:.4f}", f"{filtered_vy:.4f}",
+                    f"{vel_control_x:.4f}", f"{vel_control_y:.4f}"
+                ])
+                self.log_files["position"].flush()
+                
+        except Exception as e:
+            self.gui.update_monitor(f"Error processing position data: {e}")
+            import traceback
+            traceback.print_exc()
+
     # Hàm xử lý thông điệp log từ thiết bị
     def process_log_message(self, log_message):
         # Hiển thị log lên UI
@@ -359,9 +500,8 @@ class Server:
         self.setup_log_file("log")
         if self.log_data and "log" in self.log_files:
             timestamp = time.time() - self.common_start_time
-            self.log_files["log"].write(f"{timestamp:.3f} {log_message}\n")
+            self.log_writers["log"].writerow([f"{timestamp:.3f}", log_message])
             self.log_files["log"].flush()
-
 
     def receive_client_data(self, sock):
         buffer = ""  # Lưu dữ liệu bị phân mảnh
@@ -393,10 +533,21 @@ class Server:
                                     
                                 elif message_type == "bno055" and "data" in json_data:
                                     self.process_bno055_data(json_data["data"])
-                                    
+
+                                elif message_type == "position" and "data" in json_data:
+                                    self.process_position_data(json_data["data"])   
+
                                 elif message_type == "log" and "message" in json_data:
                                     self.process_log_message(json_data["message"])
-                                    
+                                elif message_type == "registration" and "robot_id" in json_data:
+                                    robot_id = json_data["robot_id"]
+                                    self.gui.update_monitor(f"Robot {robot_id} registered")
+                                    # Send registration response immediately
+                                    try:
+                                        sock.sendall("registration_response".encode())
+                                        self.gui.update_monitor(f"Sent registration confirmation to robot {robot_id}")
+                                    except Exception as e:
+                                        self.gui.update_monitor(f"Error sending registration response: {e}")
                                 else:
                                     self.gui.update_monitor(f"Unknown message type or missing data: {json_data}")
                             
@@ -430,11 +581,12 @@ class Server:
 
     def send_command(self, dot_x, dot_y, dot_theta):
         # Gửi lệnh điều khiển đến client
+        stop_time = 20;
         if not self.client_connected:
             print("Not connected - can't send command")
             return
             
-        command = f"dot_x:{dot_x:.4f} dot_y:{dot_y:.4f} dot_theta:{dot_theta:.4f}"
+        command = f"dot_x:{dot_x:.4f} dot_y:{dot_y:.4f} dot_theta:{dot_theta:.4f} stop_time:{stop_time}"
         
         try:
             self.client_socket.sendall(command.encode())
@@ -444,8 +596,26 @@ class Server:
         except Exception as e:
             print(f"Send command error: {e}")
             self.gui.update_monitor(f"Command send error: {e}")
+            
+    def send_position_goal(self, x, y, theta=0.0):
+        """Send a position goal to the robot
+        x, y, theta: coordinates and orientation in meters/radians
+        """
+        if not self.client_connected:
+            print("Not connected - can't send position goal")
+            return
+            
+        # Format the command for a position goal
+        # Using different prefix to distinguish from velocity commands
+        command = f"x:{x:.2f} y:{y:.2f}"
         
-
+        try:
+            self.client_socket.sendall(command.encode())
+            self.gui.update_monitor(f"Sent position goal: x={x:.2f}m, y={y:2f}m")
+        except Exception as e:
+            print(f"Send position goal error: {e}")
+            self.gui.update_monitor(f"Position goal send error: {e}")    
+            
     def set_speed(self, motor_index, speed):
         if not self.client_connected:
             self.gui.update_monitor("Not connected - can't set speed")
@@ -485,6 +655,16 @@ class Server:
             self.gui.update_monitor("Sent 'Set PID' command to the client.")
         except Exception as e:
             self.gui.update_monitor(f"Failed to send 'Set PID' command: {e}")
+
+    def show_trajectory_plot(self):
+        """Display the trajectory visualization window"""
+        trajectory_visualizer.show()
+        self.gui.update_monitor("Trajectory visualization displayed")
+
+    def show_robot_position_plot(self):
+        """Display the robot position visualization window"""
+        robot_position_visualizer.show()
+        self.gui.update_monitor("Robot position visualization displayed")
 
     def show_rpm_plot(self):
         """Display the RPM plot window"""
@@ -546,346 +726,7 @@ class Server:
         except Exception as e:
             self.gui.update_monitor(f"Error loading PID config: {e}")
 
-
-class ServerGUI:
-    def __init__(self, root):
-        self.root = root
-        self.server = Server(self)
-        self.encoder_labels = []
-        self.speed_entries = []
-        self.pid_entries = []
-        self.control_gui = ControlGUI(root)
-        self.control_gui.set_server(self.server)
-        self.setup_gui()
-
-    def setup_gui(self):
-        self.root.title("Omni Robot Server Control")
-        self.root.geometry("850x700")
-        
-        # Configure styles
-        style = ttk.Style()
-        style.configure("TButton", padding=5, relief="flat", background="#4CAF50")
-        style.configure("Red.TButton", background="#F44336", foreground="white")
-        style.configure("Green.TButton", background="#4CAF50", foreground="white")
-        
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill="both", expand=True)
-        
-        # Status bar at top
-        status_frame = ttk.Frame(main_frame, relief="sunken", padding="2")
-        status_frame.pack(fill="x", pady=(0, 10))
-        
-        ttk.Label(status_frame, text="Status:").pack(side="left")
-        self.status_label = ttk.Label(status_frame, text="Disconnected")
-        self.status_label.pack(side="left", padx=(5, 0))
-
-        # Create notebook for tabs
-        notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill="both", expand=True)
-        
-        # Create tabs
-        firmware_tab = ttk.Frame(notebook, padding=10)
-        control_tab = ttk.Frame(notebook, padding=10)
-        settings_tab = ttk.Frame(notebook, padding=10)
-        
-        notebook.add(firmware_tab, text="Firmware Update")
-        notebook.add(control_tab, text="Robot Control")
-        notebook.add(settings_tab, text="Settings")
-        
-        # Firmware Tab
-        firmware_frame = ttk.LabelFrame(firmware_tab, text="Firmware Management", padding=10)
-        firmware_frame.pack(fill="x", pady=5)
-        
-        ttk.Button(firmware_frame, text="Start Firmware Server", 
-                  command=self.server.start_firmware_server).grid(row=0, column=0, padx=5, pady=5)
-        
-        self.choose_file_button = ttk.Button(firmware_frame, text="Choose Firmware", 
-                                       command=self.choose_file, state="disabled")
-        self.choose_file_button.grid(row=0, column=1, padx=5, pady=5)
-        
-        self.send_firmware_button = ttk.Button(firmware_frame, text="Send Firmware", 
-                                        command=self.server.send_firmware, state="disabled")
-        self.send_firmware_button.grid(row=0, column=2, padx=5, pady=5)
-        
-        self.switch_upgrade_button = ttk.Button(firmware_frame, text="Switch to Upgrade Mode", 
-                                         command=self.server.send_upgrade_command,
-                                         state="disabled")  # Bắt đầu với trạng thái disabled
-        self.switch_upgrade_button.grid(row=0, column=3, padx=5, pady=5)
-        
-        # Progress bar (hidden initially)
-        self.progress_var = tk.DoubleVar()
-        self.progress_frame = ttk.Frame(firmware_tab)
-        ttk.Label(self.progress_frame, text="Upload progress:").pack(side="left")
-        self.progress_bar = ttk.Progressbar(self.progress_frame, 
-                                           variable=self.progress_var,
-                                           maximum=100, length=400)
-        self.progress_bar.pack(side="left", padx=5)
-        
-        # Control Tab
-        control_frame = ttk.LabelFrame(control_tab, text="Robot Control", padding=10)
-        control_frame.pack(fill="x", pady=5)
-        
-        ttk.Button(control_frame, text="Start Control Server", 
-                  command=self.server.start_control_server).grid(row=0, column=0, padx=5, pady=5)
-        
-        ttk.Button(control_frame, text="Stop Server", 
-                  command=self.server.stop_control_server).grid(row=0, column=1, padx=5, pady=5)
-                  
-        self.manual_control_button = ttk.Button(control_frame, text="Manual Control", 
-                                         command=self.manual_control, state="normal")
-        self.manual_control_button.grid(row=0, column=2, padx=5, pady=5)
-        
-        emerg_button = ttk.Button(control_frame, text="EMERGENCY STOP", 
-                                  command=self.server.emergency_stop, style="Red.TButton")
-        emerg_button.grid(row=0, column=3, padx=5, pady=5)
-
-        # Tạo khung chứa cho Motor Control và BNO055
-        control_container = ttk.Frame(control_tab)
-        control_container.pack(fill="x", pady=5)
-
-        # Motor control frame - đặt bên trái
-        motor_frame = ttk.LabelFrame(control_container, text="Motor Control", padding=10)
-        motor_frame.grid(row=0, column=0, padx=(0,5), pady=5, sticky="nsew")
-
-        # BNO055 frame - đặt bên phải
-        bno055_frame = ttk.LabelFrame(control_container, text="BNO055 Sensor", padding=10)
-        bno055_frame.grid(row=0, column=1, padx=(5,0), pady=5, sticky="nsew")
-
-        # Đặt trọng số cho cột để chúng mở rộng đồng đều
-        control_container.columnconfigure(0, weight=1)
-        control_container.columnconfigure(1, weight=1)
-
-        # Tạo chỉ báo trạng thái hiệu chuẩn trong khung BNO055
-        calib_frame = ttk.Frame(bno055_frame)
-        calib_frame.pack(fill="x", pady=5)
-
-        ttk.Label(calib_frame, text="Calibration Status:").pack(side="left", padx=5)
-        self.calib_indicator = tk.Label(calib_frame, text="Not Calibrated", 
-                                     bg="#F44336", fg="white", 
-                                     width=15, relief="flat")
-        self.calib_indicator.pack(side="left", padx=10)
-
-        # Thêm nội dung khác cho BNO055 frame (hiện tại để trống)
-        ttk.Label(bno055_frame, text="IMU data will be shown here").pack(pady=20)
-
-        # Các Labels cho motor_frame như cũ
-        ttk.Label(motor_frame, text="Motor").grid(row=0, column=0, padx=5, pady=5)
-        ttk.Label(motor_frame, text="Speed").grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(motor_frame, text="Action").grid(row=0, column=2, padx=5, pady=5)
-        ttk.Label(motor_frame, text="Current RPM").grid(row=0, column=3, padx=5, pady=5)
-
-        self.speed_entries = []
-        
-        for i in range(3):
-            ttk.Label(motor_frame, text=f"Motor {i+1}:").grid(row=i+1, column=0, padx=5, pady=5)
-            
-            speed_entry = ttk.Entry(motor_frame, width=7)
-            speed_entry.insert(0, "0")
-            speed_entry.grid(row=i+1, column=1, padx=5, pady=5)
-            self.speed_entries.append(speed_entry)
-            
-            set_button = ttk.Button(motor_frame, text="Set", 
-                                   command=lambda idx=i, e=speed_entry: self.set_motor_speed(idx, e))
-            set_button.grid(row=i+1, column=2, padx=5, pady=5)
-            
-            encoder_label = ttk.Label(motor_frame, text=f"RPM: 0")
-            self.encoder_labels.append(encoder_label)
-            encoder_label.grid(row=i+1, column=3, padx=5, pady=5)
-            
-        # PID control frame
-        pid_frame = ttk.LabelFrame(control_tab, text="PID Control", padding=10)
-        pid_frame.pack(fill="x", pady=5)
-        
-        # Buttons for PID control
-        ttk.Button(pid_frame, text="Start PID Monitor", 
-                  command=self.server.send_set_pid).grid(row=0, column=0, padx=5, pady=5)
-                  
-        ttk.Button(pid_frame, text="Show RPM Plot", 
-                  command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)
-                  
-        ttk.Button(pid_frame, text="Save PID Config", 
-                  command=self.server.save_pid_config).grid(row=0, column=2, padx=5, pady=5)
-                  
-        ttk.Button(pid_frame, text="Load PID Config", 
-                  command=self.server.load_pid_config).grid(row=0, column=3, padx=5, pady=5)
-        
-        # Labels for PID columns
-        ttk.Label(pid_frame, text="Motor").grid(row=1, column=0, padx=5, pady=5)
-        ttk.Label(pid_frame, text="Kp").grid(row=1, column=1, padx=5, pady=5)
-        ttk.Label(pid_frame, text="Ki").grid(row=1, column=2, padx=5, pady=5)
-        ttk.Label(pid_frame, text="Kd").grid(row=1, column=3, padx=5, pady=5)
-        ttk.Label(pid_frame, text="Action").grid(row=1, column=4, padx=5, pady=5)
-        
-        self.pid_entries = []
-        
-        for i in range(3):
-            ttk.Label(pid_frame, text=f"Motor {i+1}:").grid(row=i+2, column=0, padx=5, pady=5)
-            
-            p_entry = ttk.Entry(pid_frame, width=7)
-            i_entry = ttk.Entry(pid_frame, width=7)
-            d_entry = ttk.Entry(pid_frame, width=7)
-            p_entry.insert(0, "0")
-            i_entry.insert(0, "0")
-            d_entry.insert(0, "0")
-            p_entry.grid(row=i+2, column=1, padx=5, pady=5)
-            i_entry.grid(row=i+2, column=2, padx=5, pady=5)
-            d_entry.grid(row=i+2, column=3, padx=5, pady=5)
-            self.pid_entries.append((p_entry, i_entry, d_entry))
-            
-            set_button = ttk.Button(pid_frame, text="Set", 
-                                  command=lambda idx=i: self.set_pid(idx))
-            set_button.grid(row=i+2, column=4, padx=5, pady=5)
-            
-        # Settings Tab
-        log_frame = ttk.LabelFrame(settings_tab, text="Logging Settings", padding=10)
-        log_frame.pack(fill="x", pady=5)
-        
-        self.log_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(log_frame, text="Enable data logging", 
-                       variable=self.log_var, 
-                       command=self.toggle_logging).pack(anchor="w")
-                       
-        # Monitor Section (put at bottom of the window)
-        monitor_frame = ttk.LabelFrame(main_frame, text="Status Monitor", padding=5)
-        monitor_frame.pack(fill="both", expand=True, pady=10)
-        
-        # Create a frame for the monitor text and scrollbar
-        text_frame = ttk.Frame(monitor_frame)
-        text_frame.pack(fill="both", expand=True)
-        
-        self.monitor_text = tk.Text(text_frame, height=10, width=80, wrap="word")
-        self.monitor_text.pack(side="left", fill="both", expand=True)
-        
-        scrollbar = ttk.Scrollbar(text_frame, command=self.monitor_text.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.monitor_text.config(yscrollcommand=scrollbar.set)
-        
-        # Button to clear monitor
-        ttk.Button(monitor_frame, text="Clear Monitor", 
-                  command=self.clear_monitor).pack(anchor="e", pady=(5, 0))
-                  
-        # Initialize with a welcome message
-        self.update_monitor("Server interface initialized. Ready to start.")
-
-    def toggle_logging(self):
-        self.server.log_data = self.log_var.get()
-        self.update_monitor(f"Data logging {'enabled' if self.server.log_data else 'disabled'}")
-
-    def clear_monitor(self):
-        self.monitor_text.delete(1.0, tk.END)
-        self.update_monitor("Monitor cleared")
-
-    def setup_progress_bar(self, total_size):
-        """Setup and show progress bar for file upload"""
-        self.progress_frame.pack(fill="x", pady=10)
-        self.progress_var.set(0)
-        self.progress_bar.configure(maximum=total_size)
-
-    def update_progress(self, value):
-        """Update progress bar value"""
-        self.progress_var.set(value)
-        self.root.update_idletasks()
-
-    def hide_progress_bar(self):
-        """Hide progress bar when not needed"""
-        self.progress_frame.pack_forget()
-
-    def update_status(self, status):
-        """Update connection status"""
-        self.status_label.config(text=status)
-
-    def set_pid(self, motor_index):
-        try:
-            p = float(self.pid_entries[motor_index][0].get())
-            i = float(self.pid_entries[motor_index][1].get())
-            d = float(self.pid_entries[motor_index][2].get())
-            self.server.set_pid_values(motor_index, p, i, d)
-        except ValueError:
-            self.update_monitor(f"Invalid PID values for Motor {motor_index + 1}.")
-            messagebox.showerror("Error", f"Invalid PID values for Motor {motor_index + 1}")
-
-    def update_pid_entries(self, motor_index, p, i, d):
-        """Update PID entry fields with loaded values"""
-        self.pid_entries[motor_index][0].delete(0, tk.END)
-        self.pid_entries[motor_index][0].insert(0, str(p))
-        self.pid_entries[motor_index][1].delete(0, tk.END)
-        self.pid_entries[motor_index][1].insert(0, str(i))
-        self.pid_entries[motor_index][2].delete(0, tk.END)
-        self.pid_entries[motor_index][2].insert(0, str(d))
-
-    def choose_file(self):
-        """Open file dialog to select firmware file"""
-        file_path = filedialog.askopenfilename(
-            title="Select Firmware File",
-            filetypes=[("Binary files", "*.bin"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.server.file_path = file_path
-            self.update_monitor(f"Selected firmware file: {file_path}")
-            self.send_firmware_button.config(state="normal")
-
-    def enable_file_selection(self):
-        """Enable firmware file selection buttons"""
-        self.choose_file_button.config(state="normal")
-
-    def enable_control_buttons(self):
-        """Enable control buttons when connected"""
-        self.manual_control_button.config(state="normal")
-        # Bật nút Switch Upgrade Mode khi client kết nối vào control server
-        self.switch_upgrade_button.config(state="normal")
-        # Bật nút hiển thị trạng thái hiệu chuẩn
-
-
-    def disable_buttons(self):
-        """Disable all buttons when disconnected"""
-        self.choose_file_button.config(state="disabled")
-        self.send_firmware_button.config(state="disabled")
-        self.switch_upgrade_button.config(state="disabled")
-
-    def disable_control_buttons(self):
-        """Disable control buttons when disconnected"""
-        # The manual control button can remain enabled since it opens a separate window
-        # Tắt nút Switch Upgrade Mode khi client ngắt kết nối
-        self.switch_upgrade_button.config(state="disabled")
-        self.calib_indicator.config(bg="#F44336", text="Not Calibrated")
-    
-    def update_encoders(self, encoders):
-        """Update the encoder labels with new values"""
-        for i, value in enumerate(encoders):
-            self.encoder_labels[i].config(text=f"RPM: {value:.1f}")
-
-    def update_monitor(self, message):
-        """Add message to the monitor with timestamp"""
-        timestamp = time.strftime("%H:%M:%S")
-        self.monitor_text.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.monitor_text.see(tk.END)  # Scroll to the end
-
-    def update_speed_entry(self, motor_index, speed):
-        """Update the motor speed entry field"""
-        self.speed_entries[motor_index].delete(0, tk.END)
-        self.speed_entries[motor_index].insert(0, str(speed))
-
-    def set_motor_speed(self, motor_index, entry):
-        """Set motor speed from UI entry field"""
-        try:
-            speed = float(entry.get())
-            self.server.set_speed(motor_index, speed)
-        except ValueError:
-            self.update_monitor(f"Invalid speed value for Motor {motor_index + 1}")
-            messagebox.showerror("Error", f"Invalid speed value for Motor {motor_index + 1}")
-
-    def manual_control(self):
-        """Open manual control window for robot navigation"""
-        self.control_gui.run()
-        self.update_monitor("Manual control window opened")
-    def update_calibration_status(self, is_calibrated):
-        """Cập nhật trạng thái hiệu chuẩn của BNO055"""
-        if is_calibrated:
-            self.calib_indicator.config(bg="#4CAF50", text="Calibrated")
-        else:
-            self.calib_indicator.config(bg="#F44336", text="Not Calibrated")
-if __name__ == "__main__":
-    root = tk.Tk()
-    gui = ServerGUI(root)
-    root.mainloop()
+    def set_position_visualizer_callback(self):
+        """Set the callback for the position visualizer to send position goals"""
+        robot_position_visualizer.set_destination_callback(self.send_position_goal)
+        self.gui.update_monitor("Position visualizer destination callback configured")

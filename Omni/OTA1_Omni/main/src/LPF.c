@@ -17,8 +17,12 @@ void LPF_Clear(LPF *filter, float rpm)
     // memset(filter->x_prev, rpm, sizeof(filter->x_prev));
     // memset(filter->y_prev, rpm, sizeof(filter->y_prev));
     // rpm = filter->time_interval * rpm * 0.033; // 0.033 = Pulse per round / 60 * 1000
-    filter->x_prev = rpm;
-    filter->y_prev = rpm;
+
+    /*-----------------*/
+
+    // filter->x_prev = rpm;
+    // filter->y_prev = rpm;
+    return;
 }
 
 // Hàm áp dụng bộ lọc

@@ -1,15 +1,24 @@
 #ifndef BNO055_HANDLER_H
 #define BNO055_HANDLER_H
 
-#define REINIT_TIME 2500
-// BNO polling period.
-#define BNO_POLLING_MS 100
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 
-void ndof_task(void *pvParameters);
-void reinit_sensor(void *pvParameters);
+// Event bits
+#define BNO055_CALIBRATED_BIT BIT0
+#define BNO055_DATA_RECEIVED_BIT BIT1
 
-float get_heading();
+// Event group handle
+extern EventGroupHandle_t bno055_event_group;
 
+// Initialize BNO055 handler
 void bno055_start(int *socket);
 
-#endif // BNO055_HANDLER_H
+// Data access functions
+float get_heading(void);
+void get_accel(float *accel_x, float *accel_y, float *accel_z);
+void get_gyro_raw(float *gyro_x, float *gyro_y, float *gyro_z);
+void get_quaternion(float *quat_w, float *quat_x, float *quat_y, float *quat_z);
+bool get_motion_status(void);
+
+#endif /* BNO055_HANDLER_H */
