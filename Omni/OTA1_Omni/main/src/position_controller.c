@@ -47,6 +47,10 @@ void set_target_position(float x, float y)
     ESP_LOGI(TAG, "New target set: (%.3f, %.3f)", x, y);
 }
 
+void set_max_velo(float vel)
+{
+    max_velocity = vel;
+}
 // Check if target position has been reached
 bool is_target_reached(void)
 {

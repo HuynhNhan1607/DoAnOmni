@@ -139,8 +139,8 @@ void forward_kinematics_task(void *pvParameters)
             get_accel(&accel_x, &accel_y, &accel_z);
             // Lưu giá trị vận tốc mới nhất
 
-            robot_position.pos_x += vx * dt_actual;
-            robot_position.pos_y += vy * dt_actual;
+            robot_position.pos_x += vx * dt_actual * COVER_RATIO;
+            robot_position.pos_y += vy * dt_actual * COVER_RATIO;
 
             robot_velocity.vel_x = vx;
             robot_velocity.vel_y = vy;

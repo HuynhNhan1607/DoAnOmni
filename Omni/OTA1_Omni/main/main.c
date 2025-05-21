@@ -112,7 +112,7 @@ void task_socket(void *pvParameters)
     float dot_x, dot_y, dot_theta = 0;
     int stop_time = 0;
 
-    float pos_x, pos_y = 0;
+    float pos_x, pos_y, pos_vel = 0;
 
     int motor_id, motor_speed = 0;
 
@@ -143,12 +143,22 @@ void task_socket(void *pvParameters)
                 xEventGroupSetBits(registration_event_group, REGISTRATION_RESPONSE_BIT);
             }
 #if NON_PID == 0
-            else if (strcmp(rx_buffer, "Set PID") == 0)
+            else if (strcmp(rx_buffer, "Start Robot") == 0)
             {
                 omni_init();
-                // start_position_controller();
             }
 #endif
+            else if (strcmp(rx_buffer, "EMERGENCY_STOP") == 0)
+            {
+                set_control(0.0f, 0.0f, 0.0f);
+                set_control_velocity(0.0f, 0.0f);
+            }
+
+            else if (strcmp(rx_buffer, "Start Position") == 0)
+            {
+                start_position_controller();
+            }
+
             // Manual Control
             else if (sscanf(rx_buffer, "dot_x:%f dot_y:%f dot_theta:%f stop_time:%d", &dot_x, &dot_y, &dot_theta, &stop_time) == 4)
             {
@@ -158,9 +168,10 @@ void task_socket(void *pvParameters)
 #endif
             }
 
-            else if (sscanf(rx_buffer, "x:%f y:%f", &pos_x, &pos_y) == 2)
+            else if (sscanf(rx_buffer, "x:%f y:%f vel:%f", &pos_x, &pos_y, &pos_vel) == 3)
             {
                 set_target_position(pos_x, pos_y);
+                set_max_velo(pos_vel);
             }
 
             // Motor Set Speed

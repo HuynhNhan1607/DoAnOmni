@@ -22,6 +22,8 @@ typedef struct RobotAccel_t
     float accel_z;
 } RobotAccel_t;
 
+#define COVER_RATIO 0.8f // Hệ số trượt
+
 void get_robot_position(RobotPos_t *pos);
 
 void set_robot_position(RobotPos_t *pos);

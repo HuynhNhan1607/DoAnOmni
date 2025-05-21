@@ -6,7 +6,7 @@
     ],
     "idf.toolsPathWin": "D:\\APP\\Espressif",
     "idf.flashType": "UART",
-    "idf.portWin": "COM4",
+    "idf.portWin": "COM7",
     "files.associations": {
         "esp_log.h": "c"
     },

@@ -26,6 +26,9 @@ bno055_vec3_t lin_accel = {0};
 bno055_vec3_t gyro_raw = {0};
 static bool is_moving = false;
 
+float position[2] = {0.0f, 0.0f}; // [x, y]
+float velocity[2] = {0.0f, 0.0f}; // [vx, vy]
+
 // Socket for data forwarding (if needed)
 static int global_socket = -1;
 
@@ -34,8 +37,12 @@ static SemaphoreHandle_t imu_data_mutex = NULL;
 EventGroupHandle_t bno055_event_group = NULL;
 
 // Queue for UART data
-#define BNO055_QUEUE_SIZE 10
+#define BNO055_QUEUE_SIZE 40
 #define BNO055_MAX_MSG_SIZE 512
+
+static char uart_buffer[BNO055_MAX_MSG_SIZE * 2]; // Bộ đệm lớn để tích lũy dữ liệu
+static int uart_buffer_pos = 0;
+
 typedef struct
 {
     char data[BNO055_MAX_MSG_SIZE];
@@ -65,7 +72,6 @@ bool parse_bno055_json(const char *json_data)
     bool success = false;
     cJSON *type = cJSON_GetObjectItem(root, "type");
 
-    // Check if this is BNO055 data
     if (cJSON_IsString(type) && strcmp(type->valuestring, "bno055") == 0)
     {
         cJSON *data = cJSON_GetObjectItem(root, "data");
@@ -73,6 +79,22 @@ bool parse_bno055_json(const char *json_data)
         {
             if (xSemaphoreTake(imu_data_mutex, pdMS_TO_TICKS(50)) == pdTRUE)
             {
+                // Parse position data (mới)
+                cJSON *position_array = cJSON_GetObjectItem(data, "position");
+                if (position_array && cJSON_GetArraySize(position_array) >= 2)
+                {
+                    position[0] = cJSON_GetArrayItem(position_array, 0)->valuedouble;
+                    position[1] = cJSON_GetArrayItem(position_array, 1)->valuedouble;
+                }
+
+                // Parse velocity data (mới)
+                cJSON *velocity_array = cJSON_GetObjectItem(data, "velocity");
+                if (velocity_array && cJSON_GetArraySize(velocity_array) >= 2)
+                {
+                    velocity[0] = cJSON_GetArrayItem(velocity_array, 0)->valuedouble;
+                    velocity[1] = cJSON_GetArrayItem(velocity_array, 1)->valuedouble;
+                }
+
                 // Parse euler data
                 cJSON *euler_array = cJSON_GetObjectItem(data, "euler");
                 if (euler_array && cJSON_GetArraySize(euler_array) >= 3)
@@ -82,29 +104,28 @@ bool parse_bno055_json(const char *json_data)
                     euler.roll = cJSON_GetArrayItem(euler_array, 2)->valuedouble;
                 }
 
-                // Parse linear acceleration data
-                cJSON *lin_accel_array = cJSON_GetObjectItem(data, "lin_accel");
-                if (lin_accel_array && cJSON_GetArraySize(lin_accel_array) >= 3)
+                // Parse acceleration data (đã đổi tên từ lin_accel thành accel)
+                cJSON *accel_array = cJSON_GetObjectItem(data, "accel");
+                if (accel_array && cJSON_GetArraySize(accel_array) >= 3)
                 {
-                    lin_accel.x = cJSON_GetArrayItem(lin_accel_array, 0)->valuedouble;
-                    lin_accel.y = cJSON_GetArrayItem(lin_accel_array, 1)->valuedouble;
-                    lin_accel.z = cJSON_GetArrayItem(lin_accel_array, 2)->valuedouble;
+                    lin_accel.x = cJSON_GetArrayItem(accel_array, 0)->valuedouble;
+                    lin_accel.y = cJSON_GetArrayItem(accel_array, 1)->valuedouble;
+                    lin_accel.z = cJSON_GetArrayItem(accel_array, 2)->valuedouble;
                 }
 
-                // Parse gyro raw data
-                cJSON *gyro_raw_array = cJSON_GetObjectItem(data, "gyro_raw");
-                if (gyro_raw_array && cJSON_GetArraySize(gyro_raw_array) >= 3)
+                // Parse is_moving status (boolean trực tiếp thay vì chuỗi)
+                cJSON *moving = cJSON_GetObjectItem(data, "is_moving");
+                if (moving)
                 {
-                    gyro_raw.x = cJSON_GetArrayItem(gyro_raw_array, 0)->valuedouble;
-                    gyro_raw.y = cJSON_GetArrayItem(gyro_raw_array, 1)->valuedouble;
-                    gyro_raw.z = cJSON_GetArrayItem(gyro_raw_array, 2)->valuedouble;
-                }
-
-                // Parse status
-                cJSON *status = cJSON_GetObjectItem(data, "status");
-                if (status && cJSON_IsString(status))
-                {
-                    is_moving = (strcmp(status->valuestring, "moving") == 0);
+                    // Hỗ trợ cả boolean và string
+                    if (cJSON_IsBool(moving))
+                    {
+                        is_moving = cJSON_IsTrue(moving);
+                    }
+                    else if (cJSON_IsString(moving))
+                    {
+                        is_moving = (strcmp(moving->valuestring, "true") == 0);
+                    }
                 }
 
                 xSemaphoreGive(imu_data_mutex);
@@ -135,13 +156,29 @@ void bno055_process_uart_data(const char *data, size_t len)
         // Forward to socket if needed
         if (global_socket >= 0)
         {
-            if (send(global_socket, data, len, 0))
+            // Create a buffer with room for the newline
+            char *socket_data = malloc(len + 2);
+            if (socket_data)
             {
-                ESP_LOGD(TAG_IMU, "Socket BNO055: %s", data);
+                strcpy(socket_data, data);
+                // Add newline at the end
+                socket_data[len] = '\n';
+                socket_data[len + 1] = '\0';
+
+                if (send(global_socket, socket_data, len + 1, 0) > 0)
+                {
+                    ESP_LOGD(TAG_IMU, "Socket BNO055 sent with newline");
+                }
+                else
+                {
+                    ESP_LOGE(TAG_IMU, "Failed Socket BNO055");
+                }
+
+                free(socket_data);
             }
             else
             {
-                ESP_LOGE(TAG_IMU, "Failed Socket BNO055");
+                ESP_LOGE(TAG_IMU, "Memory allocation failed");
             }
         }
     }
@@ -172,6 +209,10 @@ void bno055_uart_task(void *pvParameters)
 {
     uint8_t data[BNO055_MAX_MSG_SIZE];
 
+    // Khởi tạo bộ đệm
+    memset(uart_buffer, 0, sizeof(uart_buffer));
+    uart_buffer_pos = 0;
+
     while (1)
     {
         int len = uart_read_bytes(BNO055_UART_PORT, data, sizeof(data) - 1, pdMS_TO_TICKS(20));
@@ -180,37 +221,113 @@ void bno055_uart_task(void *pvParameters)
         {
             data[len] = '\0'; // Kết thúc chuỗi
 
-            // ESP_LOGI(TAG_IMU, "Raw UART data (%d bytes): %s", len, data);
+            // Debug để kiểm tra dữ liệu nhận được
+            ESP_LOGI(TAG_IMU, "Raw UART data (%d bytes): %.*s", len, len, data);
 
-            // Kiểm tra có đúng là gói từ BNO055 không
-            if (strstr((char *)data, "\"type\":\"bno055\""))
+            // Kiểm tra nếu thêm vào buffer sẽ bị tràn
+            if (uart_buffer_pos + len >= sizeof(uart_buffer) - 1)
             {
-                bno055_queue_item_t item;
-
-                size_t copy_len = len < BNO055_MAX_MSG_SIZE - 1 ? len : BNO055_MAX_MSG_SIZE - 1;
-                memcpy(item.data, data, copy_len);
-                item.data[copy_len] = '\0';
-                item.len = copy_len;
-
-                if (xQueueSend(bno055_queue, &item, 0) != pdTRUE)
-                {
-                    ESP_LOGW(TAG_IMU, "Queue full, dropping BNO055 data packet");
-                }
-                else
-                {
-                    ESP_LOGD(TAG_IMU, "Queued: %s", item.data);
-                }
+                ESP_LOGW(TAG_IMU, "UART buffer overflow, resetting buffer");
+                uart_buffer_pos = 0;
             }
-            else
+
+            // Thêm dữ liệu vào buffer
+            memcpy(uart_buffer + uart_buffer_pos, data, len);
+            uart_buffer_pos += len;
+            uart_buffer[uart_buffer_pos] = '\0';
+
+            // Tìm và xử lý các JSON hoàn chỉnh trong buffer
+            char *start = NULL;
+            char *current_pos = uart_buffer;
+            int brace_count = 0;
+            bool in_json = false;
+            int json_start_idx = -1;
+
+            // Xử lý JSON theo dạng state machine để tránh nhầm lẫn với dấu ngoặc lồng nhau
+            for (int i = 0; i < uart_buffer_pos; i++)
             {
-                ESP_LOGW(TAG_IMU, "Invalid BNO055 data: %s", data);
+                char c = uart_buffer[i];
+
+                // Tìm điểm bắt đầu JSON
+                if (c == '{' && !in_json)
+                {
+                    in_json = true;
+                    json_start_idx = i;
+                    brace_count = 1;
+                    continue;
+                }
+
+                if (!in_json)
+                    continue;
+
+                // Đếm dấu ngoặc
+                if (c == '{')
+                    brace_count++;
+                if (c == '}')
+                    brace_count--;
+
+                // Nếu đã cân bằng dấu ngoặc, tìm thấy JSON hoàn chỉnh
+                if (brace_count == 0)
+                {
+                    // Extract JSON từ buffer
+                    int json_len = i - json_start_idx + 1;
+                    char json_buffer[BNO055_MAX_MSG_SIZE];
+
+                    if (json_len < BNO055_MAX_MSG_SIZE)
+                    {
+                        memcpy(json_buffer, uart_buffer + json_start_idx, json_len);
+                        json_buffer[json_len] = '\0';
+
+                        // Log JSON để debug
+                        ESP_LOGI(TAG_IMU, "Found complete JSON: %s", json_buffer);
+
+                        // Check if it's a BNO055 message
+                        if (strstr(json_buffer, "\"type\":\"bno055\""))
+                        {
+                            bno055_queue_item_t item;
+                            memcpy(item.data, json_buffer, json_len);
+                            item.data[json_len] = '\0';
+                            item.len = json_len;
+
+                            if (xQueueSend(bno055_queue, &item, pdMS_TO_TICKS(10)) != pdTRUE)
+                            {
+                                ESP_LOGW(TAG_IMU, "Queue full, dropping BNO055 data packet");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGW(TAG_IMU, "JSON too large: %d bytes", json_len);
+                    }
+
+                    // Reset state
+                    in_json = false;
+
+                    // Shift buffer contents
+                    if (i + 1 < uart_buffer_pos)
+                    {
+                        int remaining = uart_buffer_pos - (i + 1);
+                        memmove(uart_buffer, uart_buffer + i + 1, remaining);
+                        uart_buffer_pos = remaining;
+                        uart_buffer[uart_buffer_pos] = '\0';
+
+                        // Reprocess from the beginning since we modified the buffer
+                        i = -1; // Will become 0 in the next loop iteration
+                    }
+                    else
+                    {
+                        // Buffer is empty now
+                        uart_buffer_pos = 0;
+                        uart_buffer[0] = '\0';
+                        break;
+                    }
+                }
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(10)); // Shorter delay for better responsiveness
     }
 }
-
 // Get heading data
 float get_heading()
 {
@@ -337,9 +454,9 @@ void bno055_start(int *socket)
     BaseType_t uart_task_created = xTaskCreate(
         bno055_uart_task,
         "bno055_uart",
-        4096,             // Kích thước stack
+        8192,             // Kích thước stack
         NULL,             // Tham số
-        6,                // Ưu tiên cao hơn task xử lý
+        12,               // Ưu tiên cao hơn task xử lý
         &uart_task_handle // Task handle
     );
 
@@ -355,7 +472,7 @@ void bno055_start(int *socket)
         "bno055_process",
         4096,               // Kích thước stack
         NULL,               // Tham số
-        5,                  // Priority
+        12,                 // Priority
         &bno055_task_handle // Task handle
     );
 

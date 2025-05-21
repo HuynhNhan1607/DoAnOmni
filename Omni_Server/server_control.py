@@ -5,7 +5,7 @@ import time
 
 ANGLE_ROTATION = 2 * math.pi  # (Rad/s)
 TIME_ROTATION = 5  # 2s
-RPM = 50
+RPM = 60
 M_PER_ROUND = 0.06 * math.pi
  
 T = 5 #s - Time for test 1m
@@ -15,7 +15,7 @@ class ControlGUI:
         self.server = None
         self.orientation = 0  # Hướng của robot (góc quay)
         # self.max_speed = RPM * M_PER_ROUND / 60
-        self.max_speed = 1/T
+        self.max_speed = RPM * M_PER_ROUND / 60
         self.control_window = None
         self.recording = False
         self.trajectory = []
@@ -118,11 +118,11 @@ class ControlGUI:
             dot_x += self.max_speed
             self.update_status("Moving Right")
         elif key == "q":  # Quay trái
-            dot_theta = -(ANGLE_ROTATION / T)
+            dot_theta = -(ANGLE_ROTATION / TIME_ROTATION)
             self.orientation += dot_theta * 0.1
             self.update_status("Rotating Left")
         elif key == "e":  # Quay phải
-            dot_theta = ANGLE_ROTATION / T
+            dot_theta = ANGLE_ROTATION / TIME_ROTATION
             self.orientation += dot_theta * 0.1
             self.update_status("Rotating Right")
         elif key == "r":  # Ghi quỹ đạo

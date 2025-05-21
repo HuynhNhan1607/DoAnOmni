@@ -5,6 +5,8 @@
 
 void set_target_position(float x, float y);
 
+void set_max_velo(float vel);
+
 bool is_target_reached(void);
 
 void start_position_controller(void);

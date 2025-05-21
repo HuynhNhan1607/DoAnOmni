@@ -54,7 +54,7 @@ while running:
                     "grid": grid,
                     "start_pos": start_pos
                 }
-                np.save("house_map.npy", map_data)
+                np.save("empty_map.npy", map_data)
                 print("Đã lưu bản đồ (10cm x 10cm) vào house_map.npy")
                 print("Kích thước lưới:", grid.shape)
                 if start_pos:

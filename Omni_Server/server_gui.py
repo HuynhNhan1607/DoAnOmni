@@ -94,9 +94,6 @@ class ServerGUI:
                                          command=self.manual_control, state="normal")
         self.manual_control_button.grid(row=0, column=2, padx=5, pady=5)
         
-        emerg_button = ttk.Button(control_frame, text="EMERGENCY STOP", 
-                                  command=self.server.emergency_stop, style="Red.TButton")
-        emerg_button.grid(row=0, column=3, padx=5, pady=5)
 
         # Create a dedicated frame for trajectory buttons
         trajectory_frame = ttk.LabelFrame(control_tab, text="Trajectory Visualization", padding=10)
@@ -141,8 +138,42 @@ class ServerGUI:
                                      width=15, relief="flat")
         self.calib_indicator.pack(side="left", padx=10)
 
+        movement_frame = ttk.Frame(bno055_frame)
+        movement_frame.pack(fill="x", pady=5)
+
+        ttk.Label(movement_frame, text="Movement Status:").pack(side="left", padx=5)
+        self.movement_indicator = tk.Label(movement_frame, text="Stationary", 
+                                        bg="#F44336", fg="white", 
+                                        width=15, relief="flat")
+        self.movement_indicator.pack(side="left", padx=10)
+
+        # Tạo frame hiển thị vị trí
+        position_frame = ttk.LabelFrame(bno055_frame, text="Position & Velocity", padding=5)
+        position_frame.pack(fill="x", pady=5)
+
+        # Vị trí
+        pos_frame = ttk.Frame(position_frame)
+        pos_frame.pack(fill="x", pady=2)
+        ttk.Label(pos_frame, text="Position (m):").pack(side="left", padx=5)
+        ttk.Label(pos_frame, text="X:").pack(side="left", padx=2)
+        self.pos_x_label = ttk.Label(pos_frame, text="0.0000", width=8)
+        self.pos_x_label.pack(side="left")
+        ttk.Label(pos_frame, text="Y:").pack(side="left", padx=2)
+        self.pos_y_label = ttk.Label(pos_frame, text="0.0000", width=8)
+        self.pos_y_label.pack(side="left")
+
+        # Vận tốc
+        vel_frame = ttk.Frame(position_frame)
+        vel_frame.pack(fill="x", pady=2)
+        ttk.Label(vel_frame, text="Velocity (m/s):").pack(side="left", padx=5)
+        ttk.Label(vel_frame, text="X:").pack(side="left", padx=2)
+        self.vel_x_label = ttk.Label(vel_frame, text="0.0000", width=8)
+        self.vel_x_label.pack(side="left")
+        ttk.Label(vel_frame, text="Y:").pack(side="left", padx=2)
+        self.vel_y_label = ttk.Label(vel_frame, text="0.0000", width=8)
+        self.vel_y_label.pack(side="left")
         # Thêm nội dung khác cho BNO055 frame (hiện tại để trống)
-        ttk.Label(bno055_frame, text="IMU data will be shown here").pack(pady=20)
+        # ttk.Label(bno055_frame, text="IMU data will be shown here").pack(pady=20)
 
         # Các Labels cho motor_frame như cũ
         ttk.Label(motor_frame, text="Motor").grid(row=0, column=0, padx=5, pady=5)
@@ -167,24 +198,42 @@ class ServerGUI:
             encoder_label = ttk.Label(motor_frame, text=f"RPM: 0")
             self.encoder_labels.append(encoder_label)
             encoder_label.grid(row=i+1, column=3, padx=5, pady=5)
-            
-        # PID control frame
-        pid_frame = ttk.LabelFrame(control_tab, text="PID Control", padding=10)
-        pid_frame.pack(fill="x", pady=5)
         
-        tk.Button(pid_frame, text="Start Robot", 
-                command=self.server.send_set_pid, 
+
+        pid_container = ttk.Frame(control_tab)
+        pid_container.pack(fill="x", pady=5)
+
+        # PID control frame - place on the left
+        pid_frame = ttk.LabelFrame(pid_container, text="PID Control", padding=10)
+        pid_frame.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="nsew")
+
+        # Robot operation frame - place on the right
+        robot_op_frame = ttk.LabelFrame(pid_container, text="Robot Operation", padding=10)
+        robot_op_frame.grid(row=0, column=1, padx=(5, 0), pady=5, sticky="nsew")
+
+        # Configure weights to distribute space
+        pid_container.columnconfigure(0, weight=3)  # PID frame gets more space
+        pid_container.columnconfigure(1, weight=1)  # Robot operation frame gets less space
+        
+        tk.Button(robot_op_frame, text="Start Robot   ", 
+                command=self.server.send_start_robot, 
                 bg="#2196F3", fg="white",
-                padx=5, pady=2).grid(row=0, column=0, padx=5, pady=5)
-                
+                padx=5, pady=2).grid(row=0, column=0, padx=10, pady=5)
+
+        # Add the Start Position button to the new frame
+        tk.Button(robot_op_frame, text="Start Position", 
+                command=self.server.send_start_position_command,
+                bg="#2196F3", fg="white",
+                padx=5, pady=2).grid(row=1, column=0, padx=10, pady=5)
+
         ttk.Button(pid_frame, text="Show RPM Plot", 
-                command=self.server.show_rpm_plot).grid(row=0, column=1, padx=5, pady=5)
+                command=self.server.show_rpm_plot).grid(row=0, column=0, padx=5, pady=5)
                 
         ttk.Button(pid_frame, text="Save PID Config", 
-                command=self.server.save_pid_config).grid(row=0, column=3, padx=5, pady=5)
+                command=self.server.save_pid_config).grid(row=0, column=2, padx=5, pady=5)
                 
         ttk.Button(pid_frame, text="Load PID Config", 
-                command=self.server.load_pid_config).grid(row=0, column=4, padx=5, pady=5)
+                command=self.server.load_pid_config).grid(row=0, column=3, padx=5, pady=5)
         
         # Labels for PID columns
         ttk.Label(pid_frame, text="Motor").grid(row=1, column=0, padx=5, pady=5)
@@ -361,3 +410,16 @@ class ServerGUI:
             self.calib_indicator.config(bg="#4CAF50", text="Calibrated")
         else:
             self.calib_indicator.config(bg="#F44336", text="Not Calibrated")
+    
+    def update_movement_status(self, is_moving):
+        """Cập nhật trạng thái di chuyển của robot"""
+        if is_moving:
+            self.movement_indicator.config(bg="#4CAF50", text="Moving")
+        else:
+            self.movement_indicator.config(bg="#F44336", text="Stationary")
+    def update_position_velocity(self, pos_x, pos_y, vel_x, vel_y):
+        """Cập nhật thông tin vị trí và vận tốc từ BNO055"""
+        self.pos_x_label.config(text=f"{pos_x:.4f}")
+        self.pos_y_label.config(text=f"{pos_y:.4f}")
+        self.vel_x_label.config(text=f"{vel_x:.4f}")
+        self.vel_y_label.config(text=f"{vel_y:.4f}")

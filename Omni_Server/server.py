@@ -4,6 +4,7 @@ import socket
 import threading
 import re
 import time
+import math
 from tkinter import messagebox
 
 from server_rpm_plot import update_rpm_plot
@@ -13,6 +14,9 @@ from server_trajection import trajectory_visualizer
 
 from ekf_position import ekf  # Thêm dòng này để import module EKF
 import numpy as np
+
+RPM = 60
+M_PER_ROUND = 0.06 * math.pi
 
 class Server:
     def __init__(self, gui):
@@ -68,10 +72,13 @@ class Server:
         if data_type == "encoder":
             self.log_writers[data_type].writerow(["Time", "RPM1", "RPM2", "RPM3"])
         elif data_type == "bno055":
-            self.log_writers[data_type].writerow(["Time", "Heading", "Pitch", "Roll", 
-                                                 "W", "X", "Y", "Z", 
-                                                 "AccelX", "AccelY", "AccelZ", 
-                                                 "GravityX", "GravityY", "GravityZ"])
+            # Thứ tự mới: Time, PosX, PosY, VelX, VelY, Heading, Pitch, Roll, AccelX, AccelY, AccelZ, IsMoving
+            self.log_writers[data_type].writerow([
+                "Time", "PosX", "PosY", "VelX", "VelY",
+                "Heading", "Pitch", "Roll", 
+                "AccelX", "AccelY", "AccelZ",
+                "IsMoving"
+            ])
         elif data_type == "log":
             self.log_writers[data_type].writerow(["Time", "Message"])
         elif data_type == "position":
@@ -297,10 +304,20 @@ class Server:
                                                  str(self.encoders[1]), str(self.encoders[2])])
             self.log_files["encoder"].flush()
 
-    # Hàm xử lý dữ liệu BNO055
     def process_bno055_data(self, bno_data):
         """
-        Xử lý dữ liệu BNO055, chấp nhận bất kỳ trường nào được gửi lên
+        Xử lý dữ liệu BNO055 với định dạng mới:
+        {
+        "id": "device_id",
+        "type": "bno055",
+        "data": {
+            "position": [x, y],
+            "velocity": [vx, vy],
+            "euler": [heading, pitch, roll],
+            "accel": [ax, ay, az],
+            "is_moving": true/false
+        }
+        }
         """
         try:
             # Kiểm tra xem bno_data có phải dict không
@@ -308,90 +325,58 @@ class Server:
                 self.gui.update_monitor(f"Invalid BNO055 data format, expected dictionary")
                 return
 
-            # Kiểm tra sự kiện hiệu chuẩn hoàn thành
-            if "event" in bno_data and bno_data["event"] == "calibration_complete":
-                status = bno_data.get("status", {})
-                self.gui.update_monitor(
-                    f"BNO055 CALIBRATION COMPLETE! Status: Sys={status.get('sys', 0)}, "
-                    f"Gyro={status.get('gyro', 0)}, Accel={status.get('accel', 0)}, "
-                    f"Mag={status.get('mag', 0)}"
-                )
-                self.gui.update_calibration_status(True)
-                return
-
-            # Lấy dữ liệu từ JSON - chấp nhận các giá trị mặc định nếu không có
-            time_val = bno_data.get("time", 0)
+            # Lấy timestamp
+            timestamp = time.time() - self.common_start_time
             
-            # Lấy dữ liệu các trường nếu có
-            euler = bno_data.get("euler", None)
-            quaternion = bno_data.get("quaternion", None)
-            lin_accel = bno_data.get("lin_accel", None)
-            gravity = bno_data.get("gravity", None)
-            
-            # Chuẩn bị dữ liệu để ghi log
-            log_parts = []
-            log_parts.append(f"{time.time() - self.common_start_time:.3f}")
-            
-            # Xử lý dữ liệu euler nếu có
-            if euler and len(euler) >= 3:
-                heading, pitch, roll = euler[0], euler[1], euler[2]
+            # Trích xuất position (default = [0,0])
+            pos_x, pos_y = 0.0, 0.0
+            position = bno_data.get("position", None)
+            if position and len(position) >= 2:
+                pos_x, pos_y = position[0], position[1]
 
-                self.bno055_heading = heading
-
-                log_parts.extend([f"{heading:.2f}", f"{pitch:.2f}", f"{roll:.2f}"])
-            else:
-                log_parts.extend(["NA", "NA", "NA"])
-                    
-            # Xử lý dữ liệu quaternion nếu có (thêm vào log)
-            if quaternion and len(quaternion) >= 4:
-                w, x, y, z = quaternion[0], quaternion[1], quaternion[2], quaternion[3]
-                log_parts.extend([f"{w:.4f}", f"{x:.4f}", f"{y:.4f}", f"{z:.4f}"])
-            else:
-                log_parts.extend(["NA", "NA", "NA", "NA"])
+            # Trích xuất velocity (default = [0,0])
+            vel_x, vel_y = 0.0, 0.0
+            velocity = bno_data.get("velocity", None)
+            if velocity and len(velocity) >= 2:
+                vel_x, vel_y = velocity[0], velocity[1]
                 
-            # Xử lý dữ liệu lin_accel nếu có
-            if lin_accel and len(lin_accel) >= 3:
-                accel_x, accel_y, accel_z = lin_accel[0], lin_accel[1], lin_accel[2]
-                log_parts.extend([f"{accel_x:.2f}", f"{accel_y:.2f}", f"{accel_z:.2f}"])
-            else:
-                log_parts.extend(["NA", "NA", "NA"])
+            # Trích xuất euler (default = [0,0,0])
+            heading, pitch, roll = 0.0, 0.0, 0.0
+            euler_array = bno_data.get("euler", None)
+            if euler_array and len(euler_array) >= 3:
+                heading, pitch, roll = euler_array[0], euler_array[1], euler_array[2]
+                self.bno055_heading = heading  # Cập nhật heading toàn cục
+
+            # Trích xuất accel (default = [0,0,0])
+            accel_x, accel_y, accel_z = 0.0, 0.0, 0.0
+            accel_array = bno_data.get("accel", None)
+            if accel_array and len(accel_array) >= 3:
+                accel_x, accel_y, accel_z = accel_array[0], accel_array[1], accel_array[2]
                 
-            # Xử lý dữ liệu gravity nếu có
-            if gravity and len(gravity) >= 3:
-                gravity_x, gravity_y, gravity_z = gravity[0], gravity[1], gravity[2]
-                log_parts.extend([f"{gravity_x:.2f}", f"{gravity_y:.2f}", f"{gravity_z:.2f}"])
-            else:
-                log_parts.extend(["NA", "NA", "NA"])
+            # Trích xuất is_moving (default = False)
+            is_moving = bno_data.get("is_moving", False)
             
-            # Ghi log nếu được bật
+            # Cập nhật UI
+            self.gui.update_movement_status(is_moving)
+            
+            self.gui.update_position_velocity(pos_x, pos_y, vel_x, vel_y)
+            # Ghi log theo thứ tự mới: Time, PosX, PosY, VelX, VelY, Heading, Pitch, Roll, AccelX, AccelY, AccelZ, IsMoving
             self.setup_log_file("bno055")
             if self.log_data and "bno055" in self.log_files:
-                row_data = [f"{time.time() - self.common_start_time:.3f}"]
-                
-                # Thêm dữ liệu euler nếu có
-                if euler and len(euler) >= 3:
-                    row_data.extend([f"{euler[0]:.2f}", f"{euler[1]:.2f}", f"{euler[2]:.2f}"])
-                else:
-                    row_data.extend(["NA", "NA", "NA"])
-                    
-                # Thêm dữ liệu quaternion nếu có
-                if quaternion and len(quaternion) >= 4:
-                    row_data.extend([f"{quaternion[0]:.4f}", f"{quaternion[1]:.4f}", 
-                                     f"{quaternion[2]:.4f}", f"{quaternion[3]:.4f}"])
-                else:
-                    row_data.extend(["NA", "NA", "NA", "NA"])
-                
-                if lin_accel and len(lin_accel) >= 3:
-                    row_data.extend([f"{lin_accel[0]:.2f}", f"{lin_accel[1]:.2f}", f"{lin_accel[2]:.2f}"])
-                else:
-                    row_data.extend(["NA", "NA", "NA"])
-                # Tiếp tục với các dữ liệu khác...
-                
-                self.log_writers["bno055"].writerow(row_data)
+                self.log_writers["bno055"].writerow([
+                    f"{timestamp:.3f}",
+                    f"{pos_x:.4f}", f"{pos_y:.4f}",
+                    f"{vel_x:.4f}", f"{vel_y:.4f}",
+                    f"{heading:.2f}", f"{pitch:.2f}", f"{roll:.2f}",
+                    f"{accel_x:.2f}", f"{accel_y:.2f}", f"{accel_z:.2f}",
+                    "1" if is_moving else "0"
+                ])
                 self.log_files["bno055"].flush()
-                    
+                        
         except Exception as e:
             self.gui.update_monitor(f"Error processing BNO055 data: {e}")
+            import traceback
+            traceback.print_exc()
 
     def process_position_data(self, position_data):
         """
@@ -604,10 +589,11 @@ class Server:
         if not self.client_connected:
             print("Not connected - can't send position goal")
             return
-            
+        
+        speed = RPM * M_PER_ROUND / 60
         # Format the command for a position goal
         # Using different prefix to distinguish from velocity commands
-        command = f"x:{x:.2f} y:{y:.2f}"
+        command = f"x:{x:.2f} y:{y:.2f} vel:{speed:.4f}"
         
         try:
             self.client_socket.sendall(command.encode())
@@ -638,23 +624,37 @@ class Server:
             self.client_socket.sendall(b"EMERGENCY_STOP")
             self.gui.update_monitor("EMERGENCY STOP sent")
             
-            # Also reset all local speed values
-            for i in range(3):
-                self.speed[i] = 0
-                self.gui.update_speed_entry(i, 0)
+            # # Also reset all local speed values
+            # for i in range(3):
+            #     self.speed[i] = 0
+            #     self.gui.update_speed_entry(i, 0)
         except Exception as e:
             self.gui.update_monitor(f"Error sending emergency stop: {e}")
 
-    def send_set_pid(self):
+    def send_start_robot(self):
         if not self.client_connected:
             messagebox.showerror("Error", "No client connected")
             return
             
         try:
-            self.client_socket.sendall(b"Set PID")
-            self.gui.update_monitor("Sent 'Set PID' command to the client.")
+            self.client_socket.sendall(b"Start Robot")
+            self.gui.update_monitor("Sent 'Start Robot' command to the client.")
         except Exception as e:
-            self.gui.update_monitor(f"Failed to send 'Set PID' command: {e}")
+            self.gui.update_monitor(f"Failed to send 'Start Robot' command: {e}")
+
+    def send_start_position_command(self):
+        """Send start position command to the client"""
+        if not self.client_connected:
+            print("Not connected - can't send start position command")
+            self.gui.update_monitor("Not connected - can't send start position command")
+            return
+            
+        try:
+            self.client_socket.sendall(b"Start Position")
+            self.gui.update_monitor("Sent 'Start Position' command to the client")
+        except Exception as e:
+            print(f"Send start position command error: {e}")
+            self.gui.update_monitor(f"Start position command send error: {e}")
 
     def show_trajectory_plot(self):
         """Display the trajectory visualization window"""

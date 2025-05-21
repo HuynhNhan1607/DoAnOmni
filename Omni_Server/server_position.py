@@ -11,7 +11,7 @@ import queue
 import os
 
 # Fixed path to map file - change this path if needed
-MAP_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "house_map.npy")
+MAP_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "empty_map.npy")
 
 ORIGINAL_CELL = 0.1  # 10cm
 NEW_CELL = 0.02      # 1cm
