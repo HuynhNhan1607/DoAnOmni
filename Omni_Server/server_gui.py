@@ -354,7 +354,7 @@ class ServerGUI:
         """Open manual control window for robot navigation"""
         self.control_gui.run()
         """Gửi chuỗi lệnh W S A D Q E C tự động cho robot, mỗi lệnh cách nhau 5s"""
-        self.control_gui.manual_sequence()
+        # self.control_gui.manual_sequence()
         self.update_monitor("Manual control window opened")
 
     def update_calibration_status(self, is_calibrated):

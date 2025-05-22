@@ -10,7 +10,7 @@
 #define BNO055_CALIBRATED_BIT (1 << 0)
 
 /*-------------------------------------------*/
-#define USE_FUZZY_PID 0
+#define USE_FUZZY_PID 1
 #define CALIBRATION_KINEMATICS 0
 /*-------------------------------------------*/
 
@@ -49,13 +49,13 @@
 // #define WIFI_PASS "1denmuoi1"
 // #define SERVER_IP "192.168.2.126"
 
-// #define WIFI_SSID "S20 FE"
-// #define WIFI_PASS "25102004"
-// #define SERVER_IP "192.168.182.85"
+#define WIFI_SSID "S20 FE"
+#define WIFI_PASS "25102004"
+#define SERVER_IP "192.168.210.85"
 
-#define WIFI_SSID "A10.14"
-#define WIFI_PASS "MMNT2004"
-#define SERVER_IP "192.168.1.241"
+// #define WIFI_SSID "A10.14"
+// #define WIFI_PASS "MMNT2004"
+// #define SERVER_IP "192.168.1.241"
 
 // #define WIFI_SSID "UIT_CAR_RACING_2023"
 // #define WIFI_PASS "sinhvien_CEEC"
