@@ -1,10 +1,10 @@
 {
     "C_Cpp.intelliSenseEngine": "default",
-    "idf.espIdfPathWin": "d:\\IDF\\esp-idf\\v5.2.2\\esp-idf",
+    "idf.espIdfPathWin": "c:\\Users\\HuynhNhan1607\\esp-idf\\v5.3.3\\esp-idf",
     "idf.openOcdConfigs": [
         "board/esp32-wrover-kit-3.3v.cfg"
     ],
-    "idf.toolsPathWin": "D:\\APP\\Espressif",
+    "idf.toolsPathWin": "c:\\Users\\HuynhNhan1607\\Applications\\Espressif",
     "files.associations": {
         "task.h": "c",
         "system_error": "c",
@@ -20,5 +20,6 @@
         "mutex": "c"
     },
     "idf.portWin": "COM4",
-    "idf.flashType": "UART"
+    "idf.flashType": "UART",
+    "idf.pythonInstallPath": "c:\\Users\\HuynhNhan1607\\Applications\\Espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }
