@@ -5,7 +5,7 @@ import time
 
 ANGLE_ROTATION = 2 * math.pi / 3  # (Rad/s)
 TIME_ROTATION = 2  # 2s
-RPM = 50
+RPM = 65
 M_PER_ROUND = 0.06 * math.pi
 
 class ControlGUI:
