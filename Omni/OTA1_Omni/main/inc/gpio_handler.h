@@ -10,8 +10,8 @@
 #define ENCODER_3_A GPIO_NUM_33
 #define ENCODER_3_B GPIO_NUM_32
 
-#define PWM_L1 GPIO_NUM_16
-#define PWM_R1 GPIO_NUM_17
+#define PWM_L1 GPIO_NUM_22
+#define PWM_R1 GPIO_NUM_23
 #define PWM_L2 GPIO_NUM_18
 #define PWM_R2 GPIO_NUM_19
 #define PWM_L3 GPIO_NUM_13

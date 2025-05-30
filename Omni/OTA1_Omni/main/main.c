@@ -37,6 +37,48 @@ PID_t pid_motor[3];
 extern LPF encoder_lpf[NUM_MOTORS];
 extern EventGroupHandle_t bno055_event_group;
 
+// Add near the top with other global variables
+static EventGroupHandle_t registration_event_group;
+#define REGISTRATION_RESPONSE_BIT BIT5 // Define bit for registration response
+
+#if CALIBRATION_KINEMATICS == 1 /*----------------------------------------------------*/
+
+#include "esp_timer.h"
+
+static esp_timer_handle_t auto_stop_timer = NULL;
+
+static void auto_stop_timer_callback(void *arg)
+{
+    ESP_LOGW("Stop_Timer", "Auto-stop timer expired, stopping robot");
+    set_control(0.0f, 0.0f, 0.0f);
+    set_control_velocity(0.0f, 0.0f);
+
+    auto_stop_timer = NULL;
+}
+
+void start_auto_stop_timer(int seconds)
+{
+    if (auto_stop_timer != NULL)
+    {
+        esp_timer_stop(auto_stop_timer);
+        esp_timer_delete(auto_stop_timer);
+        auto_stop_timer = NULL;
+    }
+
+    esp_timer_create_args_t timer_config = {
+        .callback = &auto_stop_timer_callback,
+        .name = "auto_stop"};
+
+    ESP_ERROR_CHECK(esp_timer_create(&timer_config, &auto_stop_timer));
+
+    uint64_t timeout_us = (uint64_t)seconds * 1000000; // Chuyển giây thành microseconds
+    ESP_ERROR_CHECK(esp_timer_start_once(auto_stop_timer, timeout_us));
+
+    ESP_LOGW("Stop_Timer", "Auto-stop timer started: %d seconds (precise timing)", seconds);
+}
+#endif
+
+/*--------------------------------------------------------------------------------------*/
 int setup_socket()
 {
     struct sockaddr_in dest_addr;
@@ -68,6 +110,7 @@ void task_socket(void *pvParameters)
     int socket = *(int *)pvParameters;
 
     float dot_x, dot_y, dot_theta = 0;
+    int stop_time = 0;
 
     float pos_x, pos_y = 0;
 
@@ -83,7 +126,7 @@ void task_socket(void *pvParameters)
         if (len > 0)
         {
             rx_buffer[len] = '\0';
-            ESP_LOGI(TAG_Socket, "Received: %s", rx_buffer);
+            ESP_LOGW(TAG_Socket, "Received: %s", rx_buffer);
             // Switch to Upgrade Mode
             if (strcmp(rx_buffer, "Upgrade") == 0)
             {
@@ -94,17 +137,25 @@ void task_socket(void *pvParameters)
                 esp_ota_set_boot_partition(update_partition);
                 esp_restart();
             }
+            else if (strcmp(rx_buffer, "registration_response") == 0)
+            {
+                ESP_LOGI(TAG_Socket, "Registration response received from server");
+                xEventGroupSetBits(registration_event_group, REGISTRATION_RESPONSE_BIT);
+            }
 #if NON_PID == 0
             else if (strcmp(rx_buffer, "Set PID") == 0)
             {
-                xTaskCreate(pid_task, "pid_task", 4096, NULL, 7, NULL);
-                start_position_controller();
+                omni_init();
+                // start_position_controller();
             }
 #endif
             // Manual Control
             else if (sscanf(rx_buffer, "dot_x:%f dot_y:%f dot_theta:%f", &dot_x, &dot_y, &dot_theta) == 3)
             {
                 set_control(dot_x, dot_y, dot_theta);
+#if CALIBRATION_KINEMATICS == 1
+                start_auto_stop_timer(stop_time);
+#endif
             }
 
             else if (sscanf(rx_buffer, "x:%f y:%f", &pos_x, &pos_y) == 2)
@@ -117,10 +168,11 @@ void task_socket(void *pvParameters)
             {
 #if NON_PID == 1
                 set_motor_speed(motor_id, motor_speed > 0 ? 1 : 0, abs((int)(motor_speed * 5.11)));
-                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed);
+                LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 ESP_LOGW(TAG_PID, "Updated Motor %d speed to %d with direction %d", motor_id, abs((int)(motor_speed * 5.11)), motor_speed > 0 ? 1 : 0);
 #else
                 // Tính toán tốc độ RPM từ tốc độ PWM
+                // LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 LPF_Clear(&encoder_lpf[motor_id - 1], motor_speed * 1.0);
                 pid_set_setpoint(&pid_motor[motor_id - 1], motor_speed);
                 printf("Updated Motor %d speed to %d\n", motor_id, motor_speed);
@@ -171,63 +223,52 @@ void waitBNO055Calibration()
         }
     }
 }
-#if FAKE_DATA == 1
-void task_fake_bno055(void *pvParameters)
+
+void waitRegistrationResponse()
 {
-    int sock = *(int *)pvParameters;
-    ESP_LOGI("Fake BNO055", "Fake BNO055 task started");
-    char message[256];
-    int message_len = 0;
-
-    while (1)
+    if (registration_event_group != NULL)
     {
-        message_len = snprintf(message, sizeof(message),
-                               "{"
-                               "\"id\":\"%s\","
-                               "\"type\":\"bno055\","
-                               "\"data\":{"
-                               "\"euler\":[%.4f,%.4f,%.4f],"
-                               "\"quaternion\":[%.4f,%.4f,%.4f,%.4f]"
-                               "}"
-                               "}\n",
-                               ID_ROBOT,
-                               0.0f + (rand() % 100) / 10.0f,
-                               0.0f + (rand() % 100) / 10.0f,
-                               0.0f + (rand() % 100) / 10.0f,
-                               0.0f + (rand() % 100) / 10.0f,
-                               0.0f + (rand() % 100) / 10.0f,
-                               0.0f + (rand() % 100) / 10.0f,
-                               1.0f + (rand() % 100) / 10.0f);
+        ESP_LOGI(TAG_Socket, "Waiting for server registration response...");
+        EventBits_t bits = xEventGroupWaitBits(
+            registration_event_group,  // Event group handle
+            REGISTRATION_RESPONSE_BIT, // Bits to wait for
+            pdFALSE,                   // Don't clear bits on exit
+            pdTRUE,                    // Wait for all bits
+            portMAX_DELAY);            // Wait indefinitely
 
-        if (send(sock, message, message_len, 0) < 0)
+        if (bits & REGISTRATION_RESPONSE_BIT)
         {
-            ESP_LOGE("Fake_Data", "Failed to send Fake BNO055 data");
+            ESP_LOGI(TAG_Socket, "Registration with server complete");
         }
     }
 }
-#endif
+
 void app_main()
 {
+    registration_event_group = xEventGroupCreate();
     connect_to_wifi();
     int socket = setup_socket();
-    register_robot(socket);
+    // register_robot(socket);
+    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 7, NULL);
+    // waitRegistrationResponse();
 #if LOG_SERVER == 1
     log_init(socket);
 #endif
     ESP_LOGI(TAG_Socket, "Starting application");
     setup_encoders();
     setup_pwm();
-    xTaskCreate(task_socket, "socket_task", 4096, (void *)&socket, 10, NULL);
+
     xTaskCreate(task_send_encoder, "send_encoder", 4096, (void *)&socket, 9, NULL);
 
-#if FAKE_DATA == 1
-    xTaskCreate(task_fake_bno055, "fake_bno055", 4096, (void *)&socket, 8, NULL);
+#if NON_PID == 0
+    xTaskCreate(pid_task, "pid_task", 4096, (void *)&socket, 8, NULL);
+#else
+    omni_init(); // Vốn không có
 #endif
 
 #if USE_BNO055 == 1
     bno055_start(&socket);
     waitBNO055Calibration();
 #endif
-    omni_init();
-    start_forward_kinematics(&socket);
+    // start_forward_kinematics(&socket);
 }

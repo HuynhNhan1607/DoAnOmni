@@ -144,11 +144,12 @@ void task_send_encoder(void *pvParameters)
         if (send(sock, message, strlen(message), 0) < 0)
         {
             ESP_LOGE(TAG, "Failed to send encoder data");
+            // printf("Sent: %s\n", message);
         }
-        // else
-        // {
-        //     printf("Sent: %s\n", message);
-        // }
+        else
+        {
+            printf("Sent: %s\n", message);
+        }
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TIME_INTERVAL));
     }
 }
